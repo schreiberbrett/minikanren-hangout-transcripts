@@ -125,7 +125,7 @@ So now the unification of `x` comes first and we get the same answer back. In fa
 ((6 5))
 ```
 
-And we get the same answer back. I can also do things like add disjunction. So I can have a `conde` which is sort of like Scheme`s `cond`, in a way, except it tries all the clauses. I want to do a `run 1` first.
+And we get the same answer back. I can also do things like add disjunction. So I can have a `conde` which is sort of like Scheme's `cond`, in a way, except it tries all the clauses. I want to do a `run 1` first.
 
 ```scheme
 > (run 1 (q)
