@@ -1,0 +1,171 @@
+# Transcript of miniKanren Hangout #3, 31 March 2013
+
+Youtube link: [https://www.youtube.com/watch?v=su3os5qMLr0](https://www.youtube.com/watch?v=su3os5qMLr0)
+
+**Will:** Welcome to the third Google hangout for miniKanren. Today we have Dan Friedman, who will be explaining the implementation of core miniKanren: miniKanren with unification (`==`), `conde`, `fresh`, and the `run` interface to Scheme. The way we will structure this time is Dan will have the floor for has long as he needs. If we have time left over, we can get into questions and discussion. Hopefully it won't go the whole time. But if it does, that's fine. If it needs to be a 2 part thing, then maybe we can stop for questions and carry on next time. Without further ado, this is Dan Friedman.
+
+**Dan:** Hi everyone. I don't want to spend too much time [with my face] on the screen, because what I really want to talk about is the code. What I'm going to talk about in the code is not only what the code is doing, but also what transpired to make certain things happen. I hope [the history] will give it a little humor. I'm going to do a screen share right now. Then I'll start talking about what the code is all about. Here we go.
+
+I had a few concepts in the back of my mind when I wanted to write yet another implementation of a logic programming language. This time, my main goal was to make it efficient. I had written several others that did the things I wanted, but they were anything but efficient. One of the metaphors that I used was to use macros whenever I could verify something was finite. For example, the number of goals in an expression was finite, so I could use a macro to keep track of the number of goals. Another use of macros was to use `let` to hold the logic variables, because at any point in time there's only a finite number of them. It was always a dream of mine to somehow "trick" lexical scope into managing all the of the behavior of the logic variables, but after a while of thinking hard about it, I realized that wasn't going to happen. My next dream (which has yet to happen) is to have some percentage of the logical variables be managed by `let` and only `let`, but that has also not taken place yet.
+
+You'll notice right away that almost everything on the page you're looking at  starts out with the `define` syntax. The code here is based on what I would have liked at the time of the first publishing of The Reasoned Schemer to have been. So this is something that is idealized (metaphorically) for a second edition that didn't have any of the material that we're going to be adding to the second edition. So now let's skip right past all of this stuff. This is all very simple stuff. You all know we have `vector`s. You don't know *why* we have vectors instead of cons cells for representing (or holding, so to speak) the logic variables. Although the initial version didn't use them, it became so much simpler to manage. So we went with vectors rather than lists or cons cells.
+
+Now, `walk` was actually a fairly large discovery. In fact, Will was in my office at the time when I was drawing this picture. I was showing him that this was neat and to look at how this works. It isn't rocket science, but `walk` has the neat property that it (metaphorically) does not require any heap allocation. It's something you can do without paying for any memory. Of course if you really understand how the arrow `=>` works in `cond`, that `lambda` is actually built. That `lambda` does cause a cons cell allocation, so to speak. But for readability, we leave that arrow in. In actually running this system, we would use `let` [instead of `=>`], and that way there would be no allocation of memory whatsoever. That's how carefully we worked trying to manage the minimum amount of memory possible.
+
+`ext-s` requires no comment.
+
+`unify` actually does require a comment. For almost all [other] implementations of `unify`, when you get to the third line which says what if the other one's a variable, they just do a recursion. But we couldn't afford to do a recursion because we had already spent the energy `walk`ing the second argument. Having walked both of them, we're in a position where we have to do `ext-s-check` [in both cases]. You'll rarely see this in the literature on unification. The use of `and` in `unify` was actually a clever observation by Oleg. I know it doesn't look like any big deal, but we were [previously] doing it in a slightly more complicated way using `cond` with `=>`. This `and` turns out to be much more elegant. Shoutout to Oleg on that one.
+
+The `ext-s-check` is, of course, as trivial as it could possibly be. I would like to mention that we're going to use the concept of "checking" in future code to mean: if it returns true, you have failed. So if you see some code in the near future with `-check` at the end, you`ll know always that returning true [there] means failure. I know that's sounds a little weird, but that's how it's going to be.
+
+There's nothing to be said about 'occurs-check`.
+
+`walk*` is only used by `reify` in this code. `walk*` has the property that it *will* be using heap allocation. But at the time that you are doing that heap allocation, you are done. You get to `reify`, you've done all your analysis, and now you do `walk*`. A little historical response on `walk*`: it's the only one that does a tree walk on the whole [term?]. Anyway, `walk*` is the only one that does heap allocation, and it does a simple Lisp-style tree walk.
+
+One of the other features of miniKanren is we wanted that every possible program (that could be conceivably legal to run) would run. So it's meshing with all of Scheme (or in David's case, all of Clojure). It's guaranteed that all legal expressions in Scheme would also be legal in miniKanren. Of course it may not be the smartest thing to unify two goals, for example, because goals are just functions and functions don't unify very well. But if you wrote it and [the goals] happened to be `eq`, then you got whatever behavior you asked for. This was trump. We made a really large effort to get a seamless integration.
+
+We're looking at `reify-s` now: approximately 3 lines of code [along] with a `walk`. It was 37 lines at one time. It was the second half of the chapter on unification. Will, Oleg, and I had a section in the book on unification. We also had a section in the chapter that was twice as long as unification. Unification should have been the most important part. Reification has some interesting aspects, but it wasn't the most important part. But it was taking up a lot of code, and a lot of code means a lot of explanation. We didn't want to have a lot of explanation; we wanted a small amount of explanation. We postponed submitting the final draft of the book to MIT press because this was disturbing Will and me a lot. We couldn't bear the thought of putting this monster amount of code in.
+
+Just a little historical note here: Oleg was in California and Will and I were in Indiana. I called Oleg at midnight (our time) and I said, "Oleg, please let me just implement `reify-s` with CPS. Sure it'll be a little longer than I want it to be, but at least it'll all fit." And I got this very, very lovely response from Oleg that said, "No, we can only have one `walk*`." (Meaning there's only going to be one program for building the tree, searching the tree, etc.) I had to go along with that because I trust Oleg's judgement. I went to sleep that night, having looked at the code a lot over the last couple of days. This is what came out: this `reify-s`. It actually uses a metaphor (in the way it does the recursion) that was in the 37 lines. So `reify-s` was quite an event. Once we got `reify-s` to work, it was okay to send the book off and we can publish it. It was easy to throw out a lot of English lines and examples.
+
+If you look closely at this, you'll see the first thing that happens with the recursion in the `pair` case is that it does the `car`. That means it's guaranteed to do the `car` side first and then it does the `cdr`. In each case, it returns the appropriate substitution.
+
+`reify-name` is a trivial thing that makes one of our underscore-dot-number things [like `_.0`].
+
+`size-s` is just `length` for the substitution.
+
+What I haven't said yet is that the underscore-dot [notation] was also not exactly an accident. We have this concept of an `==` operator, the one that we all use to do unification. But at the time, when you would write a program, you would get different answers depending on the order of arguments to `==`. The different answers were alpha-equivalent: they were basically the same answers, but they were different! (Because they were equal up to alpha-equivalence, so to speak). We wanted to somehow come up with a way of guaranteeing that the answer would already take care of the alpha equivalence on its own. We came up with this idea of picking a name after the fact (using the reifier) that would, basically, normalize the information. The alpha equivalence issue that exists in many Prologs is that you get these random gensym-like objects coming out. And you think obviously that's an unbound variable. But there's no cohesion to it. By doing it like this [instead], we were able to say unequivocally that no matter what the arguments to `==` were, we were *guaranteed* that they would produce the same answers. That was really important, because Will started getting into this thing where he wanted all things to be commutative. It doesn't matter what the order of the lines are in `conde`. And it doesn't matter what goes on in `fresh`--those have to be commutative as well. We began to get into this very commutative state where everything has to behave in sorta this natural fashion.
+
+This is the essence of `reify`, which basically says that we start with the value `v` coming in (whatever's bound to `q`, our query variable). Then we do this `walk*` over it. Basically, the only thing that survives after you do a `walk*` will be fresh variables and constants throughout the expression. So now we have this thing with only fresh variables and constants--it's as ground as it can be. This is consistent with the idempotent model of substitution, which corresponds to the way Prolog sees the world. The idempotent substitution (which I've played with a fair amount) does a huge amount of heap allocation, which means it's doing a lot of heap allocation prior to failing. I didn't think that was a good thing to do. The other thing, of course, is that I wanted to have this whole thing be failure-driven. What were the numbers we discovered, Jason?
+
+**Jason:** I think it was 6-to-1.
+
+**Dan:** It fails 6 times more than it succeeds. What was the example?
+
+**Jason:** This was our full test suite.
+
+**Dan:** Yes, our full test suite includes multiple calls to quines and other things like that.
+
+Anyway, we get back this [`walk*`-ed] value `v`. We then form something called a "named substitution", which takes all the fresh variables and associates them with one of these underscore-things. Then we take the same `v` which has these fresh variables in them and do a `walk*` over [the named substitution], and we get exactly what we want: the variables' names are now these underscore entities.
+
+Let's take a look at these next three macros:
+
+`mzero` is a polite way of saying "fail".
+
+`unit` is a polite way of saying [the program] knows that the infinite sequence of substitutions (which is what we deal with all the time) is actually one of the very small infinite sequences, because it's always of size 1. Because it's always of size 1, we're able to do magical tricks with it, because we don't actually have to form the infinite sequence with `cons` (which you can see happens with `choice`). So you end up with this kind of optimization: don't use unneccesary heap allocation. This came from the work of... I forget his name right now, but it's in the references in the book (at the beginning of Connecting the Wires). And [his observes] this property that you end up with no additional cons cells. You've already done enough cons cells to do the unify, but you know that `unify` only returns one substitution [at most]. It's tricked into thinking that it's an infinite sequence. We do this "tricking" thing a few times.
+
+`choice` is just your standard way of extending the [stream of] substitutions
+. We are `cons`-ing `a` onto a function of no arguments, `f`. When we want the [tail], we'll go after it by invoking `f`.
+
+`case-inf` (and all these other little operators, `mzero`, `inc`, `unit`, etc.) were the brainchild of Ken Shan. You can see that's just a clever macro. It's been edited a little bit. We added an extra `procedure?` line (which was the brainchild of Oleg), which gives us the ability to do a kind of on-demand depth-first search such that you only go down paths that are making some progress. So that when you get your first element, it used the least amount of resources.
+
+So we have these four lines. `(not a-inf)` is basically guaranteeing that we've failed. `(procedure? a-inf)` is an opportunity to switch whose in charge of the resources. The next line `(not (and ...))` basically says that we only have a singleton, so we can do some nice things there. Finally, in `else`, we know we one of those cons cells, so we rip it apart and run the code in that. So it's a kind of pattern matcher without actually seeing the patterns. It's all done with the magic of macros.
+
+Next comes another little story. You can look at this `run` and say it's very cute, very short, and very nice. Everybody loves it. But that `(fresh (x) ...)` that's sitting there wasn't there. You can look at The Reasoned Schemer and you will see that we didn't figure this out. Why didn't we want to figure it out in the first place? If you look at that code, you'll see there's an invocation of something called `var`. Of course, `var` just creates a variable. That would be the variable we create for `x`, and then we would do something that would simulate the behavior that we have here now.
+
+But also there was a place in `fresh` that used `var`. Every time we wanted to change the representation of a variable (and we had a number of varieties after publishing the book), we had to change two places. I can tell you that gets very old very fast. I put on myself the desire to have one `var`. You would have thought I'd have it figured out after 2 and a half years, but no such luck. One night just before I was about to go out to dinner, I called Will and said, "I have an idea. Maybe this one will work." I vaguely described it. I don't remember any words I used. Sure enough, by the time I got back from dinner, Will had this working. We haven't looked back since; it's exactly what we want. You might wonder why we don't just call `(reify x s)` here (because after all, that's what we want to do; we just want to reify).
+
+Any ideas in the audience why it's not just a simple call to `(reify x s)`? The reason is [not] simple. That `(reify x s)` could, in principle, return `#f` if you didn't do something special about it. We wouldn't want to return `#f` if the `(cons ... '())` wasn't wrapping it. Because that would actually cause failure and you wouldn't get any answers. There's a `lambdag@` there which just means I know this is a goal, and so that was a problem: what to do about that `#f`. So we wrapped `(cons ... '())` around it, which at least will distinguish it from failure, since it is a list of one element. Seems like a reasonable plan. Not quite, until you look at `take`.
+
+If you look at the third line of `take`, you'll see that if we have a singleton, we return a singleton. That's the secret. Even though we're returning a list of one element (which is what `a` will be), we're coming in through it via this `cons` so that when we do the recursion we end up with exactly the right answers. So if we're doing something like `(run 1 (q) (== q #f))`, we will indeed get `(#f)` which is what we want for that particular case. Otherwise, we'll do the sort of normal things.
+
+The idea of doing `(and n (zero? n)` at the beginning and `(and n (- n 1))` at the end was another little gem of Oleg's. I had a more complicated piece of code there at one time for managing those numbers. We wanted to have only one operator that did the `run`, and if you wanted to do `run*` just pass in `#f`. If you think about what happens when `n` is `#f` you get false, which is exactly what you want in that case, and the same thing is true in [the recursive call to] `take`. It was a very small amount of energy consumed. Remember: the philosophy that Will, Oleg, and I have is that `reify` is allowed to be expensive--no one else is--because its job is to do something only once per answer.
+
+**Will:** I think the line about sticking `reify` in a list is actually intuitively very simple. It's exactly what you see in `assq`. If you're looking up a value in an association list in Scheme using `assq`, you get back the entire pair. So if you're looking up `x` and `x` is bound to 5, you get bock `(x . 5)`--you don't just get 5 back. The whole reason is that if `assq` *can't* find `x` in the association list, it returns `#f`. So if `x` had been bound to `#f`, you looked up `x`, and you got back `#f`, then you couldn't tell whether `x` is absent from the association list or if `x` is actually bound to `#f`. That's why `assq` returns the entire pair instead of just the value associated with the value you're looking up. It's exactly the same intuition.
+
+**Dan:** Absolutely the case. I couldn't agree more. The problem was finding that out: that we were messing up by returning `#f` in very rare circumstances and then not actually being able to do `(== q #f)` and getting what we wanted.
+
+Moving down. The definition of `==` is actually a violation of types, because in principle at this point, we should actually be saying that if the unify succeeds then we do a `unit` and otherwise an `mzero`. But it seems so crazy to waste all that energy, so we didn't.
+
+For `fresh`, there's not a lot to say. Will got this idea in his mind (and it was a really good one) that we ought to get as many programs to succeed as possible. You see this little `inc` guy in there? We have this collection of little, crazy programs that will go into infinite loops if `inc` ins't in there. We decided that we'll pay a tiny price of an `inc` just to make sure that a lot of really strange programs terminate, even though nobody should ever write them. Will has a whole collection of those and I'm sure he'd be happy to share them with you.
+
+`bind*` is an example of what I was trying to get at when I said I wanted to have everything that looked finite to be hiding in a macro somewhere. `bind*` is one of those. I'm going to open up a Scheme window. Let's take a look.
+
+We're gonna load this file now. We're calling it `miniC` because I gave it a name in a hurry and we didn't want to clobber anything that I could imagine.
+
+```scheme
+> (load "miniC.scm")
+```
+
+I just want to make sure it's running before we do anything magical.
+
+```scheme
+> (run 1 (q) (== 3 q))
+(3)
+```
+
+By the way, I did a little count before we started. It's 220 lines of code with 40 definitions. For those of you who are curious how much work you have to do to actually get a good sense of what's involved in this very small version (which would have been what I wanted in the first edition), it's not a lot of work.
+
+What I want to do now is something very simple.
+
+```scheme
+> (run 1 (q) (== 3 q) (== 4 q))
+```
+
+Everyone knows what that's going to do, so I won't discuss that. But I am going to expand it. Here we go:
+
+```scheme
+> (print-gensym #f)
+> (expand '(run 1 (q) (== 3 q) (== 4 q)))
+(take
+  1
+  (lambda ()
+    (let ([s empty-s])
+      (lambda ()
+        (let ([q (#2%vector 'q)])
+          (bind
+            (bind ((== 3 q) s) (== 4 q))
+            (lambda (s) (#2%cons (reify q s) '()))))))))
+```
+
+So this is what it expands to. Not very complicated-looking. We're doing a `take` of 1. That part is pretty natural. Then we have a thunk--a failure continuation. Then we initialize the substitution `s` to the empty substitution `empty-s`. Then we have another thunk. Then we lexically bind `q` to a logic variable `(vector 'q)`. Then we do this "and" operation. Forget the outer `bind` for a moment. We're going to generate `(== 3 q)` to `s`, so it'll take the first substitution. Then it returns a substitution that will be fed into `(== 4 q)`. When that's all done (this is the last part of the `run` where the reifier exists lives). Within `(lambda (s) ...)`, cons the reifier onto the empty list, and that's the second argument to `bind`. You can think of `bind` as a kind of "and" if you want. It's "and" for success and failure instead of `and` for Booleans. You can see that it's not very complicated. It's down to only being functions. For `bind*`, you really don't have to understand what it does, because you really only have to understand what the functions do. And there one is: `bind`. It feeds a substitution in, and I'll feed the result of that substitution into the next one, and so on. It's not a lot of code still.
+
+Let me go back to the other code now. I just wanted to show you that you can expand it, watch it work, and see what's it's actually doing. It's not doing very much. (That was our goal, after all). Back to the code.
+
+`bind` is actually a function, right? Think "and" for a moment. If you're in an "and" and you failed (which is represented by that empty list `()`), then you keep failing. It's the same way `and` works: if you give  `and` a `#f`, you get back a `#f`. The second line (case `(f)`) is only if you want to switch between where the resources are going. Then in the singleton case, we just apply `g` to the single substitution that came out with that `a`, because we know it's a singleton substitution. Finally in the last case `(a f)`, we're basically appending the result of `(g a)` and then building something that (when it gets its turn) will deal the invocation of `f` and invoke this `bind` again. But you don't know when it gets its turn--that's the main thing. Because it doesn't get its turn until `mplus` decides it wants to invoke the thunk in its second argument.
+
+`mplus` is tied to `conde`, so let's take a look at `conde`. Once again, we have this little `inc` guy hanging out for virtually no reason. (Again, it's because we wanted to make as many programs as possbile run, and there are these weird recursive programs that we want to make sure run as well). You may notice that we have what looks like one-too-many occurences of `...` everywhere. That's because `(g0 g ...)` says we're gonna have at least one goal. The `...` at end of `(g1 g^ ...) ...` says we're going to have at least one *clause* . If we didn't have `(g1 g^ ...)`, you would be entitled to write `(conde)`. After some number of hours (or minutes!) of discussion, we decided that we would go with this and be user-friendly, which is not one of my strong suits. It is definitely one of Will's. So we have the extra lines. That's the story of `conde`'s syntax. But yes, we could have gotten rid of [the second call to] `bind*`.
+
+You'll notice that we go right into the `bind*` here, whereas we could have used `fresh`. This was a tougher decision. In the long run, we thought that it would be better not to use `fresh` there, especially since we had an inkling that there would be people from time to time who would want to have a special fresh, for readability, for each `conde` line. That turned out to be correct.
+
+`mplus` is our append, but `mplus*` is saying "I see that you're calling append with a bunch of arguments. But it's always a finite number, so let's play that game of turning everything that's a finite number into something that's a macro." That's why `mplus*` and `conde` are both macros.
+
+We can look at what `mplus` does. You don't have to look very long to recognize that this is just a variant of `append`. `a-inf` represents an infinite sequence of substitutions (most of the time) and `f` is the other sequence of substitutions. So you have these two sequences of substitutions. The empty list in the first case means I've run out of the first list. If you were writing append, [then this is the `null?` case]. But instead of `(f)` you would just say `s`, the second argument of `append`. But since ours is a lazy second argument, you have to invoke it. So that's our first appearance of how `mplus` works.
+
+You can ignore the `(f^)` case because that's just flipping the two thunks that are floating around because it's getting ready to change whose getting the resources.
+
+**Will:** Actually Dan, that's the most important line in the entire implementation!
+
+**Dan:** I'll come back to it in a minute. I just want to point out that `mplus` is like `append`. But you're right, it is the most important line.
+
+The next line `(a)` is that special case of only one. So we can just cons that onto `f`. When it's time to look at `f`, we will, and that will happen inside `take`.
+
+Finally, the last line `(a f^)` says I want something to cons onto the `f`, so we cons it on (which is what `choice` does). Then it makes a variant of [the thunk] but it swaps whose in charge. So that when you are inside `take` and invoke the thunk, you have `f` and `f^` switched. This is Oleg's work. This is how we get the ability to swap control. That happens both in the `(f^)` case and the `(a f^)` case. You'll notice that there's a `(choice a (lambdaf@ () ...))` in the latter and an `(inc ...)` in the former. Remember that `(inc ...)` just creates a `(lambdaf@ () ...)`. It's hard to argue why one is `inc` and the other one is `choice`, but it's because we're `cons`-ing in the first case and just [delaying] in the second case. We know we want to swap whose in control in both those places, but we also want them to be asleep so that the trampoline (so to speak) that's floating around in here will switch whose in charge of the resources.
+
+Will, do you want to say any more about `mplus`?
+
+**Will:** Do you want to talk about the interleaving search and the diagonalization metaphor?
+
+**Dan**: We could, but it's almost easiest to think about it as a distributed trampoline.
+
+**Will:** Can you please define some of these terms?
+
+**Dan:** A trampoline is a way of taking two arbitrary expressions (as long as they've been CPSed), making them thunks (all tail calls have to be thunked), and then you can give control back and forth and see which one terminates. This requires you to have your code CPSed and all the tail calls thunked.
+
+**Will:** When we were talking at Clojure West, some people said they didn't understand CPS. I think CPS + trampolines + distributed may be helpful only to advanced Schemers.
+
+The original intuition was the diagonalization argument for having a one-to-one correspondence between the integers and the rational numbers. That's something that goes back to...
+
+**Dan:** Cantor, in the 1890s!
+
+**Will:** Cantor, yes.
+
+**Dan:** The way I think about [the countability of the rationals] (perhaps so that other people can gain some insight) is that you write across the top of a piece of carpet: the integers from 1 to infinity. And then down the side: the numbers 1 to infinity. Then you roll the carpet up starting from the upper left hand corner. Each roll that you make represents a small finite number of values. You can always append a small number of values to an infinite number of values. So that's the whole process: just roll it up one step at a time and then you have all the rationals.
+
+**Will:** That's the basic intuition. That allows you to deal with infinities in two directions, in a sense. The problem with depth-first search (which is used in the original version of Prolog) is that if you have one goal that can produce infinitely many answers, you can keep going down that one path and never give other conjuncts a chance to get into the action. If you want to have an interleaving search, one reasonable way to do it is this diagonalization approach where you're toggling back and forth. In fact, Oleg sent us a formula for an early version of this implementation where you can calculate the order of any answer based on the diagonalization. That's how I still think of it: every time you see one of these `inc`s, it's time to change direction and give a chance for another goal to run. That gets you off the depth-first search path.
+
+**Dan:** We only have a couple more items here: `conda` and `condu`. They each call a little "if" helper. They only differ in one way: in the first argument to `bind*`. If you look at `ifu`, you'll notice something very strange: the first argument to `bind*` in the last case (where you have both an answer and more to do `(a f)`): [in `ifu`] you have `(unit a)` and [in `ifa`] you have the whole `a-inf`. What it's basically saying is that `f` is ignored. That's kind of like what happens when you use continuations: all of a sudden your future is gone! So `f` is the rest of the `conda`/`condu` lines, so to speak. As soon as you get success, you've given up `f`. There's no more lines, metaphorically, in your `conda` or `condu`. In the `bind*` for `ifu` you only get the one line, and only the first successful substitution out of that one line. Whereas in `ifa`, you get the whole sequence of substitutions. So that's the big difference; otherwise these codes are identical. I tried very hard to come up with a way to make this code a little bit cleaner, but I finally gave up and just copied, because I didn't see any other way to do it.
+
+One of the metaphors that Will, Oleg, and I have is we wanted the code to be easily accessible, very short, and to do one thing reasonably well. We weren't concerned about putting in a pile of features. I do these things for my students. I just wanted my students to be able to say, "I think I can understand this with a little bit of energy." It turns out, this is not the code that I had originally before I met Will or Oleg. (I had already met Oleg, but it was just small sentences in meetings.)
+
+**Will:** Before, you said something about the idempotent substitution model. What in the world is that?
