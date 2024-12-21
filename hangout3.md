@@ -261,4 +261,86 @@ Some binding `(x . 5)` exists in an association list which is completely ground 
 
 You could argue that what you're asking for is not correct, but I'm still trying to think of uses for `presento` in the simplest cases that aren't gonna get you in trouble. Maybe if you had types or shape constraints. Otherwise, I can't think of a use-case that makes sense. Maybe there are some.
 
+**Jason**: I don't know a use-case [for `presento`], but I also don't have a great use-case for the fully general `absento`, either. Maybe that itself was a bridge too far.
 
+**Will:** Maybe. Although with `absento` it *is* useful to have different types of atomic values. The CESK machine uses both numbers and symbols. But yes, we haven't found a use-case for arbitrary terms. Even for `presento` [where the first argument is] restricted to be symbols, I'm afraid you could get into trouble; I'm not sure. It feels like a very different type of constraint from anything else we've had before.
+
+**Jason:** Hm. I don't know.
+
+**Dan:** It is a hard problem. That's clear. We have been working on it a fair amount of hours. Every time we think we're getting closer, the horizon shifts. It's very tricky.
+
+**Will:** I was talking to Matt Might about using an abstracted version of the [relational] CESK machine for static analysis (which was its original purpose). He was thinking that instead of doing the CESK machines, it might be better (for static analysis) to do the constraint solving approach using set constraints. He thinks if we had constraint logic programming over sets, that would be very useful. I know Nada wants it for type inference. David wants it for various problems as well.
+
+**Dan:** You have to keep in mind that `presento` and `absento` are for exactly that, but for data structures.
+
+[Will shakes his head.]
+
+No?
+
+**Will:** They're not even close to being the same. Think about the operations you have on sets: intersection, membership, union, difference, etc. We don't have operations like that yet.
+
+**Dan:** We'd be using things like `subseto`.
+
+**Will:** I disagree that they are closely related. If you had a fully general `presento`, you could probably use it along with `absento` to emulate constraints over sets.
+
+**Dan:** Yes, that's what I'm talking about.
+
+**Will:** I actually think that's a proof that you can't do it--that `presento` doesn't make sense, at least in the general sense. I could be wrong.
+
+**Jason:** Could you talk a little more about why that leads you to think `presento` doesn't work in general? I missed your reasoning on that.
+
+**Will:** If you look at any of the work on set-based constraints, they all have serious restrictions on the operations. If you look at the cutting-edge work on logic programming with sets, they only give you a handful of primitive operations--you have to derive everything else. Even then, it's a real mess to implement anything. It's ridiculously hard to do; the computational complexity is through the roof. People are really struggling with this problem, even when they have more structure imposed on the data structures and more fixed operations.
+
+The fact that we were able to start playing games using lists with `presento` and `absento` to represent sets: that if we had [a certain primitive] we could implement this-or-that set operator. It started making me nervous, because people doing *just sets* are pulling their hair out to get it to work. I could be wrong, but that's just my intuition. If an operator is powerful enough to let you do set operations on lists, then it's probably too powerful.
+
+**Dan:** When you say too powerful, do you mean unimplementable, or just useless?
+
+**Will:** It may be undecidable. Maybe you could implement it. But I think it would become "the presento system" with other things on it. You'd end up with most of the code trying to deal with `presento`, even in the best case I think. The reification stuff already looks like it would be horrendous. Even having lists causes trouble when you have `=/=` and `presento`. I don't see how this would work with other types of constraints. It seems like if you just had `==` and `presento` over lists, you may be okay. But once you add even just `=/=` it looks like it becomes a nightmare.
+
+**Dan:** We'll let you know! We're working on it.
+
+**Will:** I'm more than happy to be proven wrong about this. I'd like to have it. `presento` is like a genie that when you ask it a wish, it squirms around and...
+
+**Jason:** Fulfills it in the most terrifying way possile. miniKanren itself is like that, too.
+
+**Will:** No, not like `presento`.
+
+**Jason:** Definitely not as bad as `presento`.
+
+**Will:** I can reason about the other constraints in miniKanren. But every time I start thinking about a use-case for `presento`, it seems I would also need shape constraints (and even that probably wouldn't be sufficient). I'd need all these other constraints, but then I'd have to think about how they could interact with `presento`... ugh.
+
+**Dan:** We hear you.
+
+**David:** Even `absento` is pretty weird in the presence of anything that involves a finite domain. Finite domains in general have problems with `presento` and `absento`. For example:
+
+```scheme
+> (run 1 (x)
+    (fresh (term)
+      (boolo x)
+      (presento x term)
+      (absento #t term)
+      (absento #f term)))
+```
+
+Even that seems tricky, even if `x` never takes on a value. You've simply said `x` belongs to a domain of values and [simultaneously] that none of those values are possible.
+
+**Will:** Well, we don't have `boolo`. But we could suppose a finite domain over 0 and 1 `zero-or-oneo`.
+
+**David:** Sure.
+
+**Will:** So you'd have:
+
+```scheme
+> (run 1 (x)
+    (fresh (term)
+      (zero-or-oneo x)
+      (presento x term)
+      (absento 1 term)
+      (absento 0 term)))
+```
+
+**David:** If you never give `x` a value, you're going to run into a problem.
+
+**Will:** Won't it just turn into a disequality constraint?
+
+**David:** Maybe you're right. You guys do that trick in cKanren where you give something a domain even if it's not part of the answer--you still check that it's satisfiable.

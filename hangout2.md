@@ -317,7 +317,7 @@ A more interesting application here is--instead of printing out the output--I'm 
 
 There are a ton of approaches to debug Prolog programs. There's a lot of literature we could look at. Obviously, things that are based explicitly on the WAM may not be applicable. But a lot of the models might be useful. Also the metainterpreter stuff. Although with the metainterpreter stuff, you probably have to have a program that's fairly close to working and which is purely relational. It would be potentially helpful to have some notion of breakpoints or "you've reached a certain depth" or stuff like that. One weakness for our tools right now is we don't have good debugging support.
 
-**Unknown:** Some kind of gdb-style: "set a breakpoint here and explore the values of things where they're at currently" would be really helpful, especially for people just trying to figure out the basics. It's okay if the debugging tools are only good on really simple programs, because that's good for people trying to understand how simple programs work.
+**Michael:** Some kind of gdb-style: "set a breakpoint here and explore the values of things where they're at currently" would be really helpful, especially for people just trying to figure out the basics. It's okay if the debugging tools are only good on really simple programs, because that's good for people trying to understand how simple programs work.
 
 **Ryan:** I've found SWI-Prolog's debugger very helpful.
 
