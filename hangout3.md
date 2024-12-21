@@ -169,3 +169,96 @@ The original intuition was the diagonalization argument for having a one-to-one 
 One of the metaphors that Will, Oleg, and I have is we wanted the code to be easily accessible, very short, and to do one thing reasonably well. We weren't concerned about putting in a pile of features. I do these things for my students. I just wanted my students to be able to say, "I think I can understand this with a little bit of energy." It turns out, this is not the code that I had originally before I met Will or Oleg. (I had already met Oleg, but it was just small sentences in meetings.)
 
 **Will:** Before, you said something about the idempotent substitution model. What in the world is that?
+
+**Dan:** The version that we have, with `walk` (which does no heap allocation) is not the conceptual model of how Prolog works. I think Prolog may have arrived before idempotent substitutions. They were probably trying to explain how Prolog worked, mathematically. [John] Alan Robinson may have talked about idempotent substitutions in his early '60s paper on unification. In any event, it corresponds to using `walk*` at every step: after you get back a subsbtitution you want to get rid of all the bound variables (those which have values) so that there's only fresh variables left. Remember, `walk*` removes all of the variables in the substitution which have values, so you're only left with unbound variables in the substitutions.
+
+**Will:** Do you want to say what "idempotent" means?
+
+**Dan:** "Idempotent" means that if you *apply* the substitution multiples times to the same term, you get the same term back. When you do it the first time you might get some changes, but if you do it a second time you will not get any changes (it will be identical). If you do it a third time it will also be identical. That is the standard meaning of idempotency in mathematics.
+
+As I pointed out, `walk*` does a lot of heap allocation. In my earlier notes that Will got to see, I was doing only idempotent substitutions. It's a tricky exercise to implement them. I worked through [Foundations of Logic Programming by J. W. Loyd](https://link.springer.com/book/10.1007/978-3-642-96826-6), which is a formal description of logic programming. I've worked through it enough times following very assiduously (exactly what he was saying). Trying to trace through exactly what was going on was quite tricky. Trying to get the code to make sense was also quite tricky.
+
+Eventually I figured it out, and I was happy to have done that. I was teaching my graduates and undergraduates this material, and one day--out of the blue--I received a 30+ page critique of my 100+ pages of notes that I made available to my students. In my naivete, I had forgotten (or didn't really realize) that anything I put out there for my students on the web is available to anyone running around. It's my understanding that someone from Lambda the Ultimate found and posted it. (You could probably find it now if you're desparate and have nothing better to do.)
+
+Oleg [Kiselyov] got his hands on it and sent me this nice note criticizing almost everything I had come up with in my version [of logic programming] (which didn't have a name yet). Oleg gave it a name: we called it Kanren. Oleg started doing a lot of nice improvements to Kanren. It was running faster; Oleg came up with all sorts of neat hacks. Then Will came to Indiana University and decided to work with me. When I got to the logic part of my course, I don't think I made any sense to anybody. That's my recollection.
+
+**Will:** My recollection is that you handed out to these poor students who didn't know about macros yet (including myself) this 100 page document full of Scheme macros explaining logic programming (which you hadn't explained). You said, "Okay, now start hacking the implementation."
+
+**Dan:** I think that was pretty accurate, unfortunately. Those were busy days.
+
+I was working with David Mack, who seemed to be grokking it, and Will, who had communicated as politely as he could, "I'm not getting this. This is not making any sense to me." When I finally got Will's message, I went home and thought really hard about how to take all the parts that are confusing in Kanren and turn them inside out (simplify them) using the metaphor that I'm willing to allow the user to work a little harder to make the language a whole lot simpler. The next day I came in and got Will's attention. We did not have it where it is now. But I had enough of his attention to where we could start drafting The Reasoned Schemer. I can't forget [to mention] that when I was developing the (then-unnamed) logic language, Steve Ganz pointed out to me an extraordinary observation. I won't go into the details of the observation, but it certainly got rid of the issue concerning [logic] variables and lexical scope. That's what I wanted all along. It wasn't coming out the way I wanted [until Steve's observation].
+
+Then Mitch Wand came to Bloomington to work with me on [Essentials](https://mitpress.mit.edu/9780262560672/essentials-of-programming-languages/). While he was here, he said that if we get done with our goals for this trip, then he has comments to make about the first 60-or-so pages of our draft [of The Reasoned Schemer]. Mitch made a lot of good observations--removing more things--which has gotten us down to *this* very small implementation which should have been in The Reasoned Schemer: it would have only been `run`, `run*`, `==`, `conde`, `conda`, `condu`, and `fresh`. Of course `conda` and `condu` barely made it into the last chapter of the book. It would have been a lot tighter and more elegant.
+
+It's only 220 lines of physical code. You look at some of these lines: [the definition of] `lambdag@` could easily fit on one line. A lot of these are long because I have certain syntactic rules when I write code.
+
+**Will:** Nada was able to dig up some of those links, like the Lambda the Ultimate link and the original 30-page thing. I put the links in the group chat.
+
+**Dan:** I never saw the 30-page thing except for an email, that's great!
+
+**Will:** I still have the 100-pager on my laptop. I should put it somewhere. I've got some ideas where to put it.
+
+**Dan:** I've used my allotment here. Let's switch over to something else.
+
+**Will:** Thank you very much Dan. We can move on to other miniKanren topics. Hopefully this discussion will help people who look at the implementation in the book and are stymied. I wonder if this would have helped David when he was porting to core.logic.
+
+I will open it up to general discussion. I can start. Nada, Dan, Matt Might (my boss at Utah), and I just submitted a paper to ICFP (International Conference on Functional Programming) on the relational CESK machine, which Dan and I talked about at the Clojure West miniconfo. We were able to clean it up and get it working. In the process, we learned quite a few things. Nada and I could talk about that.
+
+**Claire:** I've been working on a blog post about cKanren. Nothing ready yet. I was curious to see how the work on `absento` was going regarding getting things to fail when they should.
+
+**Jason:** `absento` can work with arbitrary terms in either position. That's live; that's a go!
+
+**Will:** Claire, did you mean `presento`?
+
+**Claire:** I think it was the combination of `presento` and `absento`, like the cases we were talking about in the Google group.
+
+**Jason:** I think problems can emerge even with plain disequality constraints.
+
+**Will:** If you have disequality [mixed with `absento`], that's enough. As David pointed out, you can have:
+
+```scheme
+> (run 1 (q)
+    (fresh (l a b c d x y z)
+      (== `(,x ,y ,z) l)
+      (presento a l)
+      (presento b l)
+      (presento c l)
+      (presento d l)
+      (=/= a b) (=/= a c) (=/= a d)
+      (=/= b c) (=/= b d)
+      (=/= c d)
+      (symbolo a) (symbolo b) (symbolo c) (symbolo d)))
+'()
+```
+
+The system would have to be smart enough to solve this.
+
+**Claire:** Has the system gotten any smarter yet? Is this example still a problem?
+
+**Jason:** I don't have a `presento` implementation that handles this or any of the other cases we've been playing with. It's still being rapidly being written and erased from the chalkboard. We're far from the coding stage.
+
+**Will:** Does `presento` even make sense just with core miniKanren (without disequality)?
+
+**Jason:** With just `presento` and `==`, I think that *seems* to work. They don't harm each other. It's when you have `=/=` (and perhaps `symbolo` and `numbero` constraints). Those are what seem to make the search expensive. Just my intuition right now.
+
+**Will:** I'm actually still worried about `presento` [even with only `==`]. Without something else like shape constraints, I'm afraid of situations like using `presento` to say:
+
+```scheme
+> (run 1 (q)
+    (fresh (z)
+      (== q '((a . 1)
+              (b . 2)
+              (y . ,z)))
+      (presento '(x . 5) q)))
+(((a . 1)
+  (b . 2)
+  (y . (x . 5))))
+```
+
+
+Some binding `(x . 5)` exists in an association list which is completely ground except for one association `(y . ,z)` for some fresh `z`. `presento` will happily say that `,z` has to contain `(x . 5)`.
+
+
+You could argue that what you're asking for is not correct, but I'm still trying to think of uses for `presento` in the simplest cases that aren't gonna get you in trouble. Maybe if you had types or shape constraints. Otherwise, I can't think of a use-case that makes sense. Maybe there are some.
+
+
