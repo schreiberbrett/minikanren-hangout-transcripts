@@ -311,17 +311,6 @@ The fact that we were able to start playing games using lists with `presento` an
 
 **Dan:** We hear you.
 
-\[Editor's note: in the following discussion between David and Will, they might be mixing up the order of arguments to `absento`, which turns into disequality only when its *second* argument is an atom, not its first.
-
-```scheme
-> (run 1 (q) (absento q 'foo))
-((_.0 (=/= ((_.0 foo)))))
-> (run 1 (q) (absento 'foo q))
-((_.0 (absento (foo _.0))))
-```
-
-This transcript does not correct the mistake. \]
-
 **David:** Even `absento` is pretty weird in the presence of anything that involves a finite domain. Finite domains in general have problems with `presento` and `absento`. For example:
 
 ```scheme
@@ -379,6 +368,17 @@ I think Dan's view on things is the CLP approach: make sure the different variab
 **David:** Actually, maybe my [earlier] complaint about `absento` and finite domains was that it (annoyingly) fails late. It works, but the failure happens very late, whereas you would like to notice it's unsatisfiable as soon as possible. Kind of like what Dan and Jason are trying to do in the more recent versions of miniKanren.
 
 **Will:** Can you explain that more? Why does that failure happen late?
+
+\[Editor's note: in the following discussion between David and Will, they might be mixing up the order of arguments to `absento`, which turns into disequality only when its *second* argument is an atom, not its first.
+
+```scheme
+> (run 1 (q) (absento q 'foo))
+((_.0 (=/= ((_.0 foo)))))
+> (run 1 (q) (absento 'foo q))
+((_.0 (absento (foo _.0))))
+```
+
+This transcript does not correct the mistake. \]
 
 **David:** Because the failure happens only when you start enumerating the domains, even though you knew it was unsatisfiable long ago.
 
@@ -621,7 +621,7 @@ Maybe there's a way to combine (or take the cross-product) to deal with the cont
 
 It works well if you know the continuation. You don't have to know the environment or the store, right? In that sense, we're being a little more constraining than we have to with the regular evaluator. We could leave the environment and the store free.
 
-**Nada:** Just a small comment having a `pairo` constraint: one thing we did find useful in core.logic when doing this [TAPL](https://www.cis.upenn.edu/~bcpierce/tapl/) stuff was having--not a `pairo` constraint--a `listo` constraint which checks that something is a well-formed list such that if you print it out, it would not have any dots. That one is actually useful.
+**Nada:** Just a small comment on having a `pairo` constraint: one thing we did find useful in core.logic when doing this [TAPL](https://www.cis.upenn.edu/~bcpierce/tapl/) stuff was having--not a `pairo` constraint--a `listo` constraint which checks that something is a well-formed list such that if you print it out, it would not have any dots. That one is actually useful.
 
 **Will:** Like a `proper-listo`.
 
