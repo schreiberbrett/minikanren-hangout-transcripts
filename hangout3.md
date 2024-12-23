@@ -311,6 +311,17 @@ The fact that we were able to start playing games using lists with `presento` an
 
 **Dan:** We hear you.
 
+\[Editor's note: in the following discussion between David and Will, they might be mixing up the order of arguments to `absento`, which turns into disequality only when its *second* argument is an atom, not its first.
+
+```scheme
+> (run 1 (q) (absento q 'foo))
+((_.0 (=/= ((_.0 foo)))))
+> (run 1 (q) (absento 'foo q))
+((_.0 (absento (foo _.0))))
+```
+
+This transcript does not correct the mistake. \]
+
 **David:** Even `absento` is pretty weird in the presence of anything that involves a finite domain. Finite domains in general have problems with `presento` and `absento`. For example:
 
 ```scheme
@@ -343,4 +354,297 @@ Even that seems tricky, even if `x` never takes on a value. You've simply said `
 
 **Will:** Won't it just turn into a disequality constraint?
 
-**David:** Maybe you're right. You guys do that trick in cKanren where you give something a domain even if it's not part of the answer--you still check that it's satisfiable.
+**David:** Maybe you're right. You guys do that trick in cKanren where you give something a domain even if it's not part of the answer--you still check that it's satisfiable. You're probably correct.
+
+**Will:** I think it works in the `absento` case. I'm much more worries about the `presento` case. Didn't you [David] or Nada find some issue while in Portland regarding the code in cKanren to check to make sure there is an answer? Weren't you worried about that? I remember that came up in discussions.
+
+**David:** We worried that you might have constraints that are not satisfiable that are not part of the [reified] answer.
+
+**Will:** Right, which is the whole point of that piece of code.
+
+**David:** You can do a `onceo` for any variables that aren't part of the answer. But if the system you designed doesn't know how those constraints should interact with each other, you will get the wrong answers.
+
+**Will:** Wasn't that not a problem with the cKanren system, but rather letting users write [their own] predicate to specify a constraint?
+
+**David:** Yes. This is an easy mistake to make even for the constraint writer! Even if you're writing a [builtin] constraint, you can make this mistake.
+
+**Will:** Oh yeah. Writing constraints, as we've found out, is very difficult. (Not necessarily their implementation--there are things like Constraint Handling Rules that we could adopt.) But my understanding is that CHR doesn't help you figure out the semantics/interactions between constraints. That's the tricky part.
+
+I think Dan's view on things is the CLP approach: make sure the different variables have different domains and constraints and that way you don't have to worry about these interactions. Maybe we are making it too hard on ourselves by allowing a bunch of different constraints on the same variable, because that's where it gets messy. I wonder how general these other systems are in terms of allowing multiple constraints on one variable.
+
+**Claire:** I want to tackle the general problem and not restrict it.
+
+**Will:** I agree. The general problem is more interesting and useful. But it's also much, much harder. Because you have an $n^2$ interaction between the constraints on the variable. We don't have very good tools (or theory) to guide us. Something equivalent to a "code coverage" tool would help us explore and consider all of the possible interactions between different constraint cases. It's very easy to miss a case.
+
+**David:** Actually, maybe my [earlier] complaint about `absento` and finite domains was that it (annoyingly) fails late. It works, but the failure happens very late, whereas you would like to notice it's unsatisfiable as soon as possible. Kind of like what Dan and Jason are trying to do in the more recent versions of miniKanren.
+
+**Will:** Can you explain that more? Why does that failure happen late?
+
+**David:** Because the failure happens only when you start enumerating the domains, even though you knew it was unsatisfiable long ago.
+
+```scheme
+> (run 1 (x)
+    (zero-or-oneo x)
+    (absento 0 x)
+    (absento 1 x))
+()
+```
+
+If you say that `x` must be either 0 or 1 but then you say 0 or 1 cannot be present, then somehow the system should fail then. But really it will wait until reification to enumerate the domains and then fail very late.
+
+**Will:** I don't remember the implementation of cKanren well enough. Is that true in general? If you have that `x` is in the domain 0 and 1, but put two disequality constraints on `x` right away, does it wait until reification to fail?
+
+```scheme
+> (run 1 (x)
+    (zero-or-oneo x)
+    (=/= 0 x)
+    (=/= 1 x))
+()
+```
+
+**David:** *That* will fail early.
+
+**Will:** I think `absento` actually becomes `=/=` immediately in the case you were describing.
+
+**David:** No, if you say something is absent, you have to wait because you might have some uninstantiated term. It's because `absento` can be applied to any sort of tree.
+
+**Will:** Yes. You could have something like:
+
+```scheme
+> (run 1 (x)
+    (fresh (t1 t2)
+      (zero-or-one x)
+      (absento t1 x)
+      (absento t2 x)
+      ;; ...
+      (== t1 0)
+      (== t2 1)))
+()
+```
+
+And that will fail later. Maybe that can be made to fail a little sooner. But you can't fail until you know what `t1` and `t2` are. They might even be the same term `0`, in which case you still have an answer.
+
+**David:** Yes.
+
+**Will:** It be interesting to see if there's an example where it's not failing as quickly as it should. I think should still fail pretty fast here. It shouldn't wait until reification if `t1` and `t2` ever become ground.
+
+**David:** Maybe you missed what I was trying to say. What if that `x` (in `(zero-or-oneo x)`) is not in the answer? It might be some side variable. It might never get ground, which means you won't test if it's satisfiable until the very end.
+
+**Will:** Is that true in cKanren? If you do the simple ground case: `(absento 0 x)` and `(absento 1 x)`, that should be equivalent to saying `(=/= 0 x)` and `(=/= 1 x)`. Doesn't that fail fast even if `x` doesn`t appear in the answer? Or does it wait until reification?
+
+**David:** My example was more like `(absento 0 t)` where `t` is some uninstantiated tree term. Later, some goal inserts a subterm [within `t`?] constrained to the domain 0 and 1. I don't know.
+
+**Will:** `absento` is clever.
+
+**David:** You're right, I think it will fail fast, because the `absento` will be like disequality.
+
+**Will:** Nada, did you want to say anything?
+
+**Nada:** I had the same confusing as David regarding if the constraints are not actually part of the answer are unsatisfiable. Can the system always figure it out? For the current implementation of core.logic, I think not. Because we don't actually check if any constraints are mutually exclusive. But in miniKanren, you really do consider all interactions between constraints. That's a difference in design/philosophy between the two systems.
+
+**David:** We do want to fix core.logic! This problem is something we want to fix.
+
+**Nada:** But if we allow user-specified constraints, it's really hard to fix. We could [only] fix it in the trusted [builtin] constraints.
+
+**David:** Yes.
+
+**Will:** What's a trusted constraint?
+
+**David:** We would have a set of constraints that we ship with which we've tested, which are similar to miniKanren's, and which (we're fairly confident) interact well together, even if these constraints are applied to terms that don't appear in the answer. If it's some side constraint we should still be able to detect failure.
+
+If we allow users to define their own constraints, there are no such guarantees. In fact, as we're seeing, it's pretty hard to craft these constraints to interact properly. Users [defining their own constraints] could easily make mistakes. We would want to be able to run in an [unsafe] mode which emits a warning when a user-defined constraint is used.
+
+**Will:** I can see that. Or, you might be able to have something like an "isolated constraint". You could enforce that such a constraint (+ unification) are the only two constraints, for example, apply to a variable. And that if you use other constraints then you'd get an error at runtime. You might be able to do things like that.
+
+**David:** That's better because it's more flexible. You'd detect multiple incompatible constraints at the var level instead of at the whole-program level.
+
+**Will:** Yeah. I think it's easier to implement with attributed variables than with our current architecture. But I'm sure we can do it.
+
+Austin, you always have good questions. Got anything for us?
+
+**Austin:** The big issue on my mind as I'm learning this is about negation. I'm really curious how the disequality constraints factor in with negation. For instance, I think I have a bug right now where I need something to fail (negation as failure) but instead I'm succeeding with a disequality. This is all very new to me. Anything to do with negation seems to be my biggest stumbling block.
+
+I'm looking at a lot of Prolog stuff too--what [is the Prolog version of] `conda` and `condu`? Do the semantics change?
+
+**Will:** That's a good question. Negation turns out to be, in my mind, the trickiest aspect of logic programming. In Prolog, they have cut. I think it's only one operator, but they have different ways of thinking about it: red cuts, green cuts, etc.; which ones are safe and which ones aren't (that is, which ones prune the search tree too aggressively and are unsound). A cut `!/0` is a global operator, in some sense. We don't exactly have cuts in miniKanren, but `conda` and `condu` can simulate uses of cuts. You might have to do a bigger transformation on your program in order to get all the cut behaviors.
+
+In general, if ou want to model negation as failure, you want to use either `conda` or `condu`. The main difference between `conda` and `condu` is that in `condu`, the first goal in the clause can only produce at most one answer--there's no backtracking even in the first goal.
+
+The `conda`s and `condu`s are unsound in general; you can use them in ways that will lose answers that should exist. You'll get back `()` from a `run` instead of the answers that exist.
+
+There are ways to make sure that your uses of `conda` and `condu` are sound. In particular, Oleg talks about this "g-rule" (ground rule) saying that the special first-place goal in each clause of a `conda` or `condu` (which controls the control flow) had better not ground (or instantiate) any of the variables in that call, otherwise it could be unsound.
+
+The disequality constraints are different. Disequality is really the dual of unification: it makes sense logically and there's lots of math on it. It's a very weak form of negation compared to negation-as-failure.
+
+For example, you can say that "`x` is not 5" or "`x` is not the empty list", but there's no way to say that "`x` is not a pair." You could say that `x` is not a particular pair, like `(=/= x '(,y . ,z)`, but that's just saying `x` is not *that particular* pair. If you later say `(== y 3)` and `(== z 4)`, then you're just saying `(=/= x '(3 . 4))`--`x` could still be any other pair.
+
+So disequality is very weak. It can't express very much. But that's why it works well, actually. If it were more powerful, then you'd run into trouble trying to solve the constraints (or soundness problems). Disequality constraints are a very weak form of negation. These other constraints we have (finite domain constraints or the set constraints we want) can each be looked at as some encoded form of negation--even things like `symbolo` or `numbero`. If you know some `x` is either a symbol or a number, you can have `(symbolo x)` in one `conde` clause and `(numbero x)` in another and the clauses will be mutually exclusive.
+
+But in general, we don't have a "super-negation" operation. I don't think it can exist and still be sound and implementable.
+
+**Austin:** The situation where it keeps arising for me is when trying to write the non-overlapping clauses of a `conde` without using some form of negation to create that separation.
+
+**Will:** Yes. This was a big stumbling block in our interpreter stuff. Even for the lambda calculus: you have variables, procedure application, and lambdas. Lambda, itself, is like a tag. You can unify against a list whose first element is `'lambda`, and that makes sure it's a lambda expression. But before we introduced the `symbolo` constraint, there was to way to say something was a variable (just a symbol). We actually need the `symbolo` constraint to enforce that something is a variable.
+
+We used to tag expressions. We had a `'var` tag so that variables would actually be `(var ,x)`. And procedure application would be `(app ,operator-expression ,operand-expression)`. The problem with that was when we wanted to generate quines and deal with `'quote`. Inside the quotes you had to have to have `'app` tags, `'var` tags, and other really weird ways. It made the answers almost impossible to interpret, parse, and unparse. It was a real mess.
+
+`symbolo` let us get away with not tagging variables. And we just removed the `'app` tag for application. There's a neat trick there: in our interpreter, application actually *does* overlap with `quote`, `*`, and things like that. If you have an expression like `(quote ,x)`, application will also be tried, it just happens that the variable lookup with fail: `quote` isn't a variable bound in the environment (so it would fail). That's a case where we actually violate the non-overlapping principle at the "pattern matching" level but enforce it at the "variable lookup" level.
+
+In general, things like tagging or using special constraints like `symbolo` or `numbero` (or using other constraints useful to you) are the first line of defense in making sure things are non-overlapping. If you're writing a [relational] reducer, where you have an expression you want to keep reducing until it can't be reduced anymore, you can just keep reducing it until you get an actual value, like a number or closure expression--that's another technique you can use.
+
+But you have to look at the individual problem. If you explain your problem in more detail, or post your code to the mailing list, we can help you with that.
+
+**Nada:** I have a problem where I run into this. It relates to the issue where you can't have the negative constraint which asserts that a term is not a pair. Let's say you have a `conda` where your first clause is matching against a pair and the other clause matches when you don't have a pair. Is there any way to transform this `conda` into a `conde`?
+
+**Will:** Maybe. Sometimes you know that you either have a pair or a number, symbol, or some other atomic type. Then you can enumerate (have separate clauses) for those. But if you *really* want to say something is not a pair, you need a separate constraint for that. We've had that constraint in the past: `not-pairo`. We've had it in the language a couple times; Dan has advocated for it a number of times. But it seems like every time we use it, at some point we find a way to get rid of it. If I find myself using `not-pairo`, I'm probably doing something else wrong. But it's an easy constraint to write--the only thing you have to look out for are all these interactions with other constraints.
+
+In the chat, Claire says she thinks cKanren ships with `never-trueo`. What is that?
+
+**Claire:** You can write `(not-pairo x)` as `(never-trueo pair? x)`.
+
+**Will:** Uh oh. This sounds like the core.logic thing where you can define an arbitrary constraint with a predicate.
+
+**Claire:** Yes, it takes a Scheme predicate.
+
+**David:** Yes it's the same. It allows you to convert an arbitrary Scheme predicate into a constraint. We have a similar facility [in core.logic]. Though by including it, you're allowing people to do *very unsound things*.
+
+**Claire:** Yup.
+
+**Will:** Okay. I think you can definitely implement `not-pairo` using `never-trueo`. You'd have to think hard about how it interacts with other things. It seems like `=/=` and `not-pairo` work fine together, but for `absento` or the finite domain constraints you'd have to think through those interactions. Actually, it would probably be fine with finite domain constraints; I'm not sure how it would interact with `absento`. We haven't thought about that. Maybe it would just work. It seems like a fairly safe constraint compared to other constraints we've written. `not-pairo` is a pretty weak constraint, actually. Basically, you're saying it has to be an atomic value.
+
+We've talked about adding an `atomico` or `atomo` constraint that says its one of the well-known atomic values. In fact, if your only constraints are symbols and numbers, you can define `atomo` as:
+
+```scheme
+(defrel (atomo x)
+  (conde
+    [(symbolo x)]
+    [(numbero x)]))
+```
+
+**Jason:** With booleans and the empty list as well, right?
+
+**Will:** Well...
+
+**Nada:** In my case it was actually more complicated. I was really looking at doing algebraic simplification. In my `conda` I actually had a special term I was looking for (like `(+ x 0)`, for example) and I wanted the other clause to be *not* that. In some cases, it's really hard to translate from relational to non-relational. If you go the constraint route, you have to add a lot of ad-hoc constraints.
+
+**Dan:** Can I get back to the discussion of `pairo` and `not-pairo`? Will, do you think both of those should exist, just one, or none?
+
+**Will:** Every time you ask me about `pairo`, I point out that you can just define it using `==`.
+
+```scheme
+(defrel (pairo x)
+  (fresh (a d)
+    (== x `(,a . ,d))))
+```
+
+`pairo` is trivial to define. But like I said, every time I find myself using `not-pairo`, I find out later that I can write it in a simpler way and not need it.
+
+**Dan:** My point was [you're working with?] a diminished space of values.
+
+**Will:** Here's the argument for `not-pairo`:
+
+As you pointed out for `atomo`, if you have booleans and the empty list as well, you'd define `atomo` as:
+
+```scheme
+(defrel (atomo x)
+  (conde
+    [(symbolo x)]
+    [(numbero x)]
+    [(== '() x)]
+    [(== #t x)]
+    [(== #f x)]))
+```
+
+But depending on what terms are in your [relational interpreter's] language, you may or may not have all those things. If you're doing an interpreter for the lambda calculus, you don't have booleans or numbers. So your definition of what it means to "not be a pair" changes depending on the input language you want to interpret.
+
+The nice thing about having a `not-pairo` constraint is that it wouldn't be "fragile" with respect to what you consider atomic values. That's an argument for it. The other argument is: although it's true that every time I use it I find a way out of it, I don't necessarily find a way out initially. Sometimes I use it in the beginning and then figure out later how to get rid of it. That's another argument to have it: just to be expressive with the idea to get rid of it at some point. It's like how sometimes I'll use a `conda` or `condu` just to get something working and then figure out how to get rid of that later.
+
+**Dan:** Legitimate answer, but I'm not sure I agree with it.
+
+**Will:** What part do you disagree with? I hope you don't disagree about `pairo` [being redundant].
+
+**Jason:** I did want to ask about `pairo`, if you'll indulge me before we move on. We've talked often about how implementing things with `conde` and `==` can be too strict [eager], and how constraints have a more lazy factor. Does that apply here as well? Maybe I want a `pairo` constraint that does not enlarge the substitution. Would that ever be a concern? Maybe in a recursive program?
+
+**Will:** I can't imagine it. Every constraint does change the constraint *store*. It may not affect the substitution, but if the constraint isn't already subsumed, then you have to add it to the overall constraint store.
+
+**Jason:** That's true.
+
+**Will:** Furthermore, I just see it as a type of unification constraint. You're just giving some "shape" to a term. I don't know why you would want that to be particularly lazy.
+
+**Jason:** I don't have a use-case for it, either.
+
+**Dan:** One possibility would be a cleaner implementation of `absento`.
+
+**Will:** I can't imagine making that lazy and not making all of unification lazy. And I really don't think you want to make all of unification lazy, because then you're never going to be able to fail fast, I don't think. Maybe you could make unification lazy and interact with other constraints. But I think, with unification, you either have to make everything lazy, or not. I don't see an advantage to making it lazy.
+
+**David:** I don't totally agree. Something that I don't like about [the user-level] formulation of `pairo` is that you end up instantiating stuff, and that's not *really* what you want to do. A lot of programs are non-terminating because you instantiate things. You really do want to say it's a constraint that gets lazily applied. There are definitely cases where I've seen user programs that end up writing something like this, whereas the termination behavior would be better if they expressed whether something was a list (or not) as a constraint, not as a goal.
+
+**Will:** Can you give an example of that? I can't think of one. The thing that makes `pairo` different from most constraints is that there aren't multiple choices. Normally you'd want to make a constraint lazy (like a finite domain constraint) because you don't want to enumerate a domain. But here there's only one answer. You don't need a `conde` to express it. You don't need to enumerate things. I don't know of a case where you wouldn't want to use [a user-level] `pairo`. Can you think of an example where it's too aggressive?
+
+**David:** Especially given our discussion around `presento` and `absento`, I think there's some utility in lazy constraints that say you have an atomic thing versus a tree-like thing. Again, I haven't completely thought that through. But you guys are working with programs that manipulate very deep tree [terms] where being able to fail faster via a lazy constraint might be better than instantiating terms accidentally through goals.
+
+**Will:** The `absento` and `presento` are cases where if you try to simplify those constraints, you'd end up with *many* simplified constraints. You could end up with things like disjunction.
+
+In fact, one of the hard things about trying to implement `presento` is that you end up with a disjunction in general. It's sorta like having a `conde` inside the constraint. Most of these constraints (like the finite domain constraints) have a disjunction-like feel. But for `symbolo`, `numbero`, or `pairo`, you have one possible answer. I don't see the advantage of making that lazy.
+
+**David:** It might be true. Based on what Claire said, I think there's something not dissimilar from finite domains. When you're able to assert that something is or is not a tree term, that's sort of like a domain over trees where you can say these terms are either going to be atomic or trees, like a flag. Like when you say a term is 0 or 1, this term is either atomic or not atomic. What Claire said made me think some of the issues with `presento` may be solvable in that way. I don't know; just an idea floating around in my head.
+
+**Will:** My argument for not having a separate constraint for `pairo` is that you can already express `pairo` using `==`. Then you would have two different ways (one as a lazy constraint, one using unification) to express exactly the same information. And `not-pairo` would have to see if the variable was already associated with a pair in the store, anyway. It would already have to do that work, onless you got rid of unification.
+
+I think *this* is interesting: if you want to go to constraint systems that don't necessarily have unification as an operator (instead doing finite domain and other operations), then `pairo` makes sense. But to me, that feels very different than anything we've implement so far.
+
+**David:** More stuff to think about.
+
+**Will:** Definitely. Nada, did you want to say anything about the paper? There were a couple interesting things. We learned a bunch of things between the confo talk and finishing the paper. Maybe we could share some of the things we learned that maybe weren't clear or hadn't been fleshed out.
+
+**Nada:** One subtle thing was that when you did the confo talk, you were basically overconstraining. The trick of reconnecting the input and output was overconstraining the result, because the system has to work for any kind of continuation, but we were assuming it was the empty continuation. In the final version, we just do the trick for the empty continuation, which means that it doesn't always run fast backwards in the general case.
+
+**Will:** Right. If you have the 4-element CESK machine, then we're not taking advantage of this trick. We lose to the fact that this is in CPS form and that the input and output are not connected well. The search times just go up exponentially, whereas you don't with the simple evaluator. Really, it's only the continuation we have to know [ground?]. And it doesn't even have to be the empty continuation, but we do have to know what the continuation is in order to play this trick.
+
+Have you thought any more about how this `v-out` trick works for small-step [interpreters], or if it works at all?
+
+**Nada:** No, I haven't thought about it. The trick as we present it in the paper really seems to be related to CPS. We made this connection clear in the paper by using `remember*o` [`rember*o`?] as an example: where you have some situations that work fine but become divergent when you do the CPS transform. We can get back the old non-divergent behavior by using this same trick.
+
+But in the small-step case, it's really different. It's not [slow?] because of a CPS form, but really because we have these intermediary steps. And there, what we do is basically unfold from the small-step to the big-step. It has a different feel to it. I don't really see a connection. The CPS trick, in some ways, is a bit deeper; it's not just about unfolding. You really just have to keep some connection that the CPS removed. Whereas small-step to big-step is just an unfolding.
+
+**Will:** An idea I had was: the problem we ran into with the continuations is that if you don't know the exact starting continuation then this trick doesn't work, because you have to take the derivative of the expected output with respect to both the expression *and* the continuation. You only have to look at the current expression--you don't have to look at the whole tree at once. But you have to know the whole continuation you're starting with. Maybe that's a property of how the interpreters is structured. Maybe we could flip it around and make the interpreter work on continuation application first and expression evaluation second. Maybe that would allow us to look at one part of the contuation at a time if we know the whole expression, if that makes sense. Then, I started thinking you still have the same problem, just flipped around.
+
+Maybe there's a way to combine (or take the cross-product) to deal with the continuation and expression--dispatching on both at the same time. Obviously, your code would grow. I wonder if by doing something like that you would be able to be a little more general and use this trick for the full CESK machine. I'm not sure.
+
+**Nada:** The only thing I worry about, when you do this generalization step, is whether you do too much computation up front, doing more work than you need. That's the feel I had when I went from the small-step to the big-step: the unfolding was doing all the work up front and then at every small step it was just repeating all the big-step work. I guess that's something we have to experiment with. In addition to the repetiton [of code], there's a risk of doing things many more times than you need.
+
+**Will:** Yeah, I think that's why you have a problem using this approach when the continuation is a fresh variable. You could try finding/searching/instantiating the full continuation, but I think in that process you end up doing the work of the evaluator anyway.
+
+**Nada:** And you might be doing it for all possible continuations.
+
+**Will:** Exactly. At that point I think you've already done too much work.
+
+It works well if you know the continuation. You don't have to know the environment or the store, right? In that sense, we're being a little more constraining than we have to with the regular evaluator. We could leave the environment and the store free.
+
+**Nada:** Just a small comment having a `pairo` constraint: one thing we did find useful in core.logic when doing this [TAPL](https://www.cis.upenn.edu/~bcpierce/tapl/) stuff was having--not a `pairo` constraint--a `listo` constraint which checks that something is a well-formed list such that if you print it out, it would not have any dots. That one is actually useful.
+
+**Will:** Like a `proper-listo`.
+
+**Nada:** Yes.
+
+**Will:** That feels like the shape constraint stuff. You can't express `proper-listo` via unification without introducing recursion. That's something that feels like it should be a lazy constraint, whereas `pairo` should not. I'd like to see it.
+
+Or you could imagine a shape constraint saying "this is an association list mapping symbols to arbitrary terms". that might be helpful. It would be cool to be able to express what the shape looks like somehow: "a proper list where each element is a pair with a `symbolo` constraint in its `car` and no constraint on its `cdr`." At that point you start getting into the tradeoffs between a static type system and a shape constraint system. They still feel different to me.
+
+**Dan:** It seems that for a `proper-listo` constraint, if you manage to walk down to the end and have a dotted logic variable `x` at the end, you can throw out all your work and just do `(proper-listo x)`, and that's it. You shouldn't have to do it for the whole data structure. All you need to know is what's at the end: if `()` is at the end then it's a proper list, and if not, it better be a `proper-listo` of that last term.
+
+**Nada:** You're rigth. You also want to check if the `car` [`cdr`?] is a list, then it should also be a `proper-listo`.
+
+**Will:** Beyond that, for Oleg numbers you might want to say you have a proper list where each element is from the finite domain {0, 1}. But even that's not enough to express all the properties of an Oleg number, because the last element can't be a 0. But it would give you the ability to express more things. The question on my mind is if you can't express all of the features that you need, then is it a good idea to express most of them? Or do you just not worry about it? Oleg's opinion of the Oleg numbers was that the user has to be responsible to not instantiate the number to illegal values. Because we only had unification (at the time, at least) there was no way to enforce it other than enumerating ground values , which defeats the point.
+
+The question is: can we express things in a way that's lazy enough to be useful, but also expressive enough to ensure that the terms are properly typed? And if we get to that point, are we better off just with a static type system (even though that's more restrictive than we might want)?
+
+**David:** Nada, it's funny because at one point I submitted `proper-listo` as a lazy constraint to your repo. But I think you removed it.
+
+**Nada:** I removed it because now it's part of core.logic. You have the [`seqc`](https://clojuredocs.org/clojure.core.logic/seqc) constraint.
+
+**David:** Oh right! Do you use that?
+
+**Nada:** Yeah.
+
+**Will:** I'm going to end the broadcast now. Thanks everyone.
