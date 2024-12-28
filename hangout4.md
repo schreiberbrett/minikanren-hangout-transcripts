@@ -58,7 +58,7 @@ That looks good. Now I have to fill in what's going on in my cases. If the thing
     [(fresh (a d)
        (== l `(,a . ,d)) ;; <-
        (rembero x d res)
-       (== s `(,a . ,res))])) ;; <-
+       (== s `(,a . ,res)))])) ;; <-
 ```
 
 I think I've done everything fine, and then I run the program:
@@ -84,7 +84,7 @@ Unbound identifier. What did I do?
     [(fresh (a d)
        (== l `(,a . ,d))
        (rembero x d res)
-       (== s `(,a . ,res))]))
+       (== s `(,a . ,res)))]))
 ```
 
 I meant to do `d` instead of `a`. There we go. Okay:
@@ -96,4 +96,241 @@ Expected: ((a b y))
 Computed: ((a b y . _.0) (a b y x . _.0))
 ```
 
-That's not good! 
+That's not good! That's not the answer I expected. I'm getting `a`, `b`, and `y`, but I'm ending up with this extra answer, and I'm also ending up with a fresh tail `_.0` instead of the empty list at the end. This is something that happens to me a lot. We will see how testing can get you to see what's going wrong with this program.
+
+I notice immediately that this example is too complicated. It's what I want `rembero` to do if it's working perfectly, but I really need some unit tests. What if I just did a `run 1`, taking `'x` out of the empty list?
+
+```scheme
+(test "test 1"
+      (run 1 (q) (rembero 'x '()))
+      '(()))
+```
+
+This is a simple sanity check.
+
+```
+debugging.rkt:33:0: error while running tests
+expression: (run 1 (q) (rembero (quote x) (quote ()) q))
+Expected: (())
+Computed: (_.0)
+```
+
+I immediately know which line this in, since I know exactly what `l` is [in this case]. Of course, I see the problem that I have forgotten [to unify `s` to the empty list] when I know that `l` is the empty list.
+
+```scheme
+(define (rembero x l s)
+  (conde
+    [(== l '()) (== s '())] ;; <-
+    [(fresh (d)
+       (== l `(,x . ,d))
+       (rembero x d s))]
+    [(fresh (a d)
+       (== l `(,a . ,d))
+       (rembero x d res)
+       (== s `(,a . ,res)))]))
+```
+
+So that is how making a simple unit test for the base case will help you find the problem in this program.
+
+```
+Testing test 1
+Testing rembero
+debugging.rkt:37:0: error while running tests
+expression: (run* (q) (rembero (quote x) (quote (a b y x)) q))
+Expected: ((a b y))
+Computed: ((a b y) (a b y x))
+```
+
+But that still doesn't work. It looks a little better. Let's see what happens if I do another test. I expect to get the empty list again.
+
+```scheme
+(test "test 2"
+      (run 1 (q) (rembero 'x '(x) q))
+      '(()))
+```
+
+That works! What about a `run 2`?
+
+```scheme
+(test "test 3"
+      (run 2 (q) (rembero 'x '(x) q))
+      '(()))
+```
+
+Each time, I'm adding only a little bit more information to what I'm working with. Even though I'm doing a `run 2`, I still expect to get the same answer out, and I don't.
+
+```
+expression: (run 2 (q) (rembero (quote x) (quote (x)) q))
+Expected: (())
+Computed: (() (x))
+```
+
+There's an extra answer here, and that's not good. We've narrowed down exactly the problem, and that's pretty much as far as testing can get us. I'm going to start again by doing printing instead.
+
+We need to figure out which of these `conde` clauses is causing the problem. What you can do is print a message to see which `conde` clause is getting through.
+
+```scheme
+(define (rembero x l s)
+  (conde
+    [(== l '()) (== s '())]
+    [(fresh (d)
+       (== l `(,x . ,d))
+       (rembero x d s)
+       (prtm "Line 2\n"))] ;; <-
+    [(fresh (a d)
+       (== l `(,a . ,d))
+       (rembero x d res)
+       (== s `(,a . ,res))
+       (prtm "Line 3\n"))])) ;; <-
+```
+
+So if it gets through the second `conde` line, it'll print out "Line 2", and if it gets through the third `conde` line, it'll print out "Line 3".
+
+```
+Testing test 3
+Line 2
+Line 3
+expression: (run 2 (q) (rembero (quote x) (quote (x)) q))
+Expected: (())
+Computed: (() (x))
+```
+
+I see that when I'm testing "test 3" I get an answer from Line 2 *and* and answer from Line 3. That's not good. I've now figured out that I get my two different answers [requested by `run 2`] from two different lines. To figure out which one [the false positive] is, I'll use failing. I will "fail out" line 3.
+
+```scheme
+(define (rembero x l s)
+  (conde
+    [(== l '()) (== s '())]
+    [(fresh (d)
+       (== l `(,x . ,d))
+       (rembero x d s)
+       (prtm "Line 2\n"))]
+    [fail ;; <-
+     (fresh (a d)
+       (== l `(,a . ,d))
+       (rembero x d res)
+       (== s `(,a . ,res))
+       (prtm "Line 3\n"))]))
+```
+
+I don't want to delete any of my code, since I'm pretty sure it's close to being correct. I'll just put a `fail` first so that it won't actually go down this clause. When I do that:
+
+```
+Testing test 3
+```
+
+I get the answer I was expecting for test 3. Now we know that case 3 is what's causing the problem. How do I narrow down exactly what's going wrong here? I will print.
+
+```scheme
+(define (rembero x l s)
+  (conde
+    [(== l '()) (== s '())]
+    [(fresh (d)
+       (== l `(,x . ,d))
+       (rembero x d s))]
+    [(fresh (a d)
+       (== l `(,a . ,d))
+       (rembero x d res)
+       prt ;; <-
+       (== s `(,a . ,res)))]))
+```
+
+When I run test 3, what does my substitution look like right after the recursive call?
+
+```
+Testing test 3
+(((#_(res) . ())
+  (#_(a) . x)
+  (#_(d) . ())) . ())
+```
+
+I see that `res` is the empty list (which is should be). But I also see that `a` is bound to `'x`! I don't want this to be my "`a` is `'x`" line. We all know that you need the disequality here. I can look at my substitution and see right away that I wasn't expecting `a` to be `'x`. So:
+
+```scheme
+(define (rembero x l s)
+  (conde
+    [(== l '()) (== s '())]
+    [(fresh (d)
+       (== l `(,x . ,d))
+       (rembero x d s))]
+    [(fresh (a d)
+       (== l `(,a . ,d))
+       (=/= a x) ;; <-
+       (rembero x d res)
+       (== s `(,a . ,res)))]))
+```
+
+```
+Testing test 1
+Testing test 2
+Testing test 3
+Testing rembero
+```
+
+[No test failures]. Hooray! That's all well and good. But what if I had done something silly like this?
+
+```scheme
+(define (rembero x l s)
+  (conde
+    [(== l '()) (== s '())]
+    [(fresh (d)
+       (== l `(,x . ,d))
+       (rembero x d s))]
+    [(fresh (a d)
+       (rembero x d res) ;; <-
+       (== l `(,a . ,d))
+       (=/= a x)
+       (== s `(,a . ,res)))]))
+```
+
+Now if you're a seasoned miniKanren user, you know to put your recursive calls last. But maybe I didn't know that; maybe I diverged like I am now:
+
+```
+Testing test 1
+Testing test 2
+Testing test 3
+... user break
+```
+
+How do I know what's generating all these answers? I guess I can try tracing. In cKanren, there's a macro that will trace what your variables are when you come into a function.
+
+An aside: here's why the normal [`printf`] doesn't work. If you do something like this:
+
+```scheme
+(define (my-goal q)
+  (printf "~s\n" q)
+  (conde
+    [(== q 5)]
+    [(== q 6)]))
+
+(run* (q) (my-goal q))
+```
+
+This will print out:
+
+```
+#_(q)
+'(5 6)
+```
+
+Just this variable `q`. That's not very helpful at all. What we really want to know is exactly what `q` is when it gets into the goal. And, if we had a `fail` here, Scheme would actually still print out that `q`:
+
+```scheme
+(run* (q) fail (my-goal q))
+```
+
+```
+#_(q)
+'()
+```
+
+Scheme will keep going until you hit the goal. It'll see that this is a `fail` goal and that `my-goal` is a function, it will print, and it will stop when it hits this `conde`. 
+
+
+
+
+
+
+
+
+
