@@ -313,7 +313,7 @@ This will print out:
 '(5 6)
 ```
 
-Just this variable `q`. That's not very helpful at all. What we really want to know is exactly what `q` is when it gets into the goal. And, if we had a `fail` here, Scheme would actually still print out that `q`:
+Just this variable `q`. That's not very helpful at all. What we really want to know is exactly what `q` is when it gets into the goal. Even if we had a `fail` here, Scheme would actually still print out that `q`:
 
 ```scheme
 (run* (q) fail (my-goal q))
@@ -324,13 +324,149 @@ Just this variable `q`. That's not very helpful at all. What we really want to k
 '()
 ```
 
-Scheme will keep going until you hit the goal. It'll see that this is a `fail` goal and that `my-goal` is a function, it will print, and it will stop when it hits this `conde`. 
+Scheme will keep going until you hit the goal. It'll see that this is a `fail` goal and that `my-goal` is a function, it will print, and it will stop when it hits this `conde`. Even with the `fail` [appearing first], it looks like you're getting into `my-goal` because `#_(q)` is printed. That is very deceiving.
 
+The way to get around this is by *tracing* as soon as you get into the goal:
 
+```scheme
+(trace-define (rembero x l s) ;; <-
+  (conde
+    [(== l '()) (== s '())]
+    [(fresh (d)
+       (== l `(,x . ,d))
+       (rembero x d s))]
+    [(fresh (a d)
+       (rembero x d res)
+       (== l `(,a . ,d))
+       (=/= a x)
+       (== s `(,a . ,res)))]))
+```
 
+If I do this, I'll probably get a lot of spam...
 
+```
+Testing test 3
+(rembero x (x) #_(q))
+(rembero x () #_(q))
+(rembero x #_(d) #_(res))
+(rembero x #_(d) #_(res))
+(rembero x #_(d) #_(res))
+(rembero x #_(d) #_(res))
+...
+```
 
+Yeah. Okay. So this is printing out the current value of all my variables in the substitution when `rembero` is entered--not when `(rembero x l s)` happens, but rather it's right about to evaluate this `conde`. It's the same as wrapping a `fresh` around the goal and doing a `project`.
 
+```scheme
+(define (rembero x l s)
+  (fresh ()                        ;; <-
+    (project (x l s)               ;; <-
+      (printf "~a ~a ~a\n" x l s)) ;; <-
+    (conde
+      [(== l '()) (== s '())]
+      [(fresh (d)
+         (== l `(,x . ,d))
+         (rembero x d s))]
+      [(fresh (a d)
+         (rembero x d res)
+         (== l `(,a . ,d))
+         (=/= a x)
+         (== s `(,a . ,res)))])))
+```
 
+Let's look at my trace. In "test 3", the repeated traces of `(rembero x #_(d) #_(res))` must be coming from the third `conde` case `(rembero x d res)`. I'm guessing this is what's going wrong, because it shouldn't be printing`#_(res)` anymore, and not `#_(d)` anymore. I know, since I'm running this in a ground list [in test 3], that these should have values. That really, these should have values first.
 
+```scheme
+(trace-define (rembero x l s)
+  (conde
+    [(== l '()) (== s '())]
+    [(fresh (d)
+       (== l `(,x . ,d))
+       (rembero x d s))]
+    [(fresh (a d)
+       (== l `(,a . ,d))
+       (=/= a x)
+       (== s `(,a . ,res))
+       (rembero x d res))])) ;; <-
+```
 
+That's the conclusion that any seasoned miniKanrener would do immediately.
+
+```
+Testing test 1
+(rembero x () #_(q))
+Testing test 2
+(rembero x (x) #_(q))
+(rembero x () #_(q))
+Testing test 3
+(rembero x (x) #_(q))
+(rembero x () #_(q))
+Testing rembero
+(rembero x (a b y x) #_(q))
+(rembero x (b y x) #_(res))
+(rembero x (y x) #_(res))
+(rembero x (x) #_(res))
+(rembero x () #_(res))
+```
+
+Now I've gotten to what I was expecting.
+
+That is all I was planning on talking about. Does anyone have any questions?
+
+**Will:** Don't be shy. Any questions? Or are there other miniKanren debugging techniques that they would like to share?
+
+**Unknown:** I have a question. Would it be possible in `trace-define` to have it introspect which [parent] `conde` clause corresponds to which binding? You can sorta infer.
+
+**Claire:** Yes. With a little more machinery, that would definitely be possible. This version, no. The Scheme-y solution would be to assign a unique [gensym?] variable for *this* branch, and a unique variable for *that* branch, etc. When you go to print out one of these results, you can print out all the `conde` branch variables that you know about. Definitely possible. It's on the horizon. I haven't gotten there yet, though.
+
+**Ambrose:** How do the printing goals correspond with the interleaving search? Do they interact in weird ways?
+
+**Claire:** Yes! You're going to see answers printed out in the same order that the search goes. So you might be doing one thing and then be in a completely different place in the next printout. It would definitely be helpful to remember the path it was coming from so that you could print them out in some kind of more concise way.
+
+**Will:** Austin, I know that you 've been interested in learning more about miniKanren debugging. Is this helpful?
+
+**Austin:** Yeah, I've been doing something similar, especially with tracing the output. Unfortunately in the program I'm working with, there's so much going on. It's really easy to get lost in the sea of output, especially with that interleaving issue. One thing I've found to be really useful is that I set it up to print --similar to what Claire has--but it only prints when the depth has exceeded a certain bound, like 1000 iterations. Then I get back that single branch's path. That's helpful to route through all the hard-to-follow noise. But I feel like I need both: one with complete output and one with just the branch, because they tell different stories.
+
+In doing this, one thing I've been wondering about is if there's a higher level way of looking at this (instead of just tracing branches). In the same way that we *program* these logic programs on a higher level [than the execution sequence]. Is there a higher level way of debugging, thinking about goals, and thinking about what's happening in the system than just following the thread of execution?
+
+**Will:** I don't know if you have any thought about higher level debugging techniques, Claire. Some of the things Nada has been doing with metainterpreters have that feel to me. Also, there are these Prolog techniques that have been developed over time, like the Byrd Box model (which I think is named after Don [Lawrence?] Byrd). It would be cool to explore it in the miniKanren context.
+
+Claire and Nada, you both have given though to debugging (and Nada's been doing metainterpreter stuff). Do you have any suggestions for higher level abstractions for debugging?
+
+**Claire:** I'd definitely like to be able to trace the path of a single variable through the program. That would be incredibly helpful to me. Really, I wish there was some way to interact with the program as its running to step through the execution and be able to stop it, tweak variables, and continue in order to see what's going wrong. I think either of those would be very helpful.
+
+**Austin:** Claire, have you looked at the SWI Prolog debugger?
+
+**Claire:** Yes. It's out there. I wish there was one for miniKanren.
+
+**Austin:** I just got into it last week. It's really interesting to be able to do things interactively. The fact that you can trigger a break at any time, see the current stack of goals trying to be solved, and start stepping through at that point. I thought it was really, really useful. I'd love to have something like that.
+
+**Will:** Yes, that would be really cool. Nada, do you have any thoughts? The metainterpreter stuff is like debugging at a super high level, in a way.
+
+**Nada:** I'm still thinking about how the metainterpreter stuff could be used in a more general setting than just type systems and programming languages, which was really the focus (the way I shaped it to be). I'm curious to ask Claire: Do you think it would be possible to integrate with Racket's debugging? How extensible is it? Have you looked into how to use the debugging facilities in Racket to use with new languages.
+
+**Claire:** I haven't explored it very much, but I know they have a way to step through programs with the debugger. I just don't know how useful that would be given the structure of how miniKanren programs run. The debugging information I get when trying to debug cKanren is mostly unhelpful. There's a lot that would have to be done to get it to be transparent enough to work with Racket facilities.
+
+**Will:** Dan and Jason, you guys have lots of experience debugging. (Maybe more experience debugging the implementation than debugging user-level programs). But I'm curious what techniques you have. Do you have debugging tidbits, thoughts you'd like to share, or tools you'd like to see?
+
+**Jason:** A lot of it isn't terribly sophisticated, like print statements. I'm not above having a massive `trace-define`, watch my test suite run, find out where it breaks, and then walk back up. I don't like having to go to that, but it works.
+
+Sometimes inserting a fake goal and printing out the state every so often. Really, by printing out the state every so often, I can check if it's a problem before I hit the reifier or after I hit the reifier. Figuring out which end of the system its on is really helpful and already halfway to the answer.
+
+**Dan:** That sounds about right to me. Debugging is tricky in miniKanren, in terms of implementation. It's subtle.
+
+**Jason:** I've found it to be useful to have a really nice, well-orchestrated test suite. Even make sure `(run 1 (q) fake-goal)` runs through the system where `fake-goal` does not use `==`, `=/=`, or other constraints. Even doing nothing, does the system work? Then add a couple `==`s and see how that goes. Start mixing in the features one at a time. We have the test suite orchestrated so that if it breaks on test 43, I know what I added between test 42 and test 43.
+
+**Dan:** And it always breaks on 43. That's life.
+
+**Will:** Those are good points when debugging the implementation, which is different than debugging a user program. But you're right about trying to find out if the problem is in reification or before reification. Because reification is complicated (and getting *more* complicated with all the constraints). A lot of times, you'll actually be producing the right answers but then reification chokes on it.
+
+**Dan:** One of the things we're planning on doing (that we just haven't done yet) is: just as we have a `reify` goal (so to speak--it looks like a goal) at the end, we're also going to pull out the fixpoint as its own, fake, pre-reify goal. Every `fresh` used inside `run` will end up having two fake goals instead of one, which will probably give us a good opportunity to see where things happen. I don't like that they're all meshed together now. That's going to be a fairly simple change; I can't imagine it taking more than 10 minutes. We just need to get around to doing it.
+
+**Jason:** That fixpoint itself is something to keep an eye on. We found that if you weren't careful, those fixpoint functions could interact and cause an infinite loop. If you're not aware of that (or not planning for that) when you're building the system, it's part of what makes adding constraints an *expert's* task.
+
+**Will:** Very good. Thank you, Claire, for sharing your debugging approach. I hope that it will become more sophisticated over time, that our tools become better, that we can do more stuff like SWI Prolog, come up with higher level debugging techniques, and understand the metainterpreter stuff. I think we'll get better. I think because miniKanren still has a research-y feeling, these sorts of tools and debugging techniques have not gotten the attention they deserve. I think we can start addressing that a little more seriously. Hopefully core.logic will also get some of those things.
+
+**Dan:** Claire, in your implementation of `trace-define`, did you just redefine `fresh` or something to use `project` in appropriate places? How did you do that?
+
+**Claire:**
