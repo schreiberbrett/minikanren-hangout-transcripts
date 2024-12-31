@@ -469,4 +469,236 @@ Sometimes inserting a fake goal and printing out the state every so often. Reall
 
 **Dan:** Claire, in your implementation of `trace-define`, did you just redefine `fresh` or something to use `project` in appropriate places? How did you do that?
 
-**Claire:**
+**Claire:** All that `trace-define` does is it immediately inserts a `(fresh () ...)`, projects the arguments, prints them, and exits the fresh.
+
+**Dan:** Can you do something special when exiting the [relation definition] so that you can see what happened to those variables?
+
+**Claire:** Yes, I do remember doing that. It was not as helpful as I thought it would be. I forget why.
+
+**Dan:** You saw a lot of unbound variables, probably.
+
+**Claire:** Yes, and it didn't happen where I thought it would. If there was a recursive call, I wanted to see the printout right before the recursive call, but I got it [after?]. It was still confused about the mixed [interleaved] evaluation. It was not as helpful as I thought it would be.
+
+**Dan:** It would really be nice if, somehow, we always knew when we were making a recursive call, but we don't. There's no way in the current model to know when you're making a recursive call. It would be really handy if we had some sort of technology like that.
+
+**Jason:** That seems undecidable [Rice's theorem?]. You'd have to detect cycles [mutual recursion?].
+
+**Will:** Time for a miniKanren compiler/rewrite system! A source-to-source compiler, or something like that. You could probably do that with a rewriting system. Let's open the floor to general discussion, questions, or things people are working on or interested in. After that, we can talk about constraint logic programming using sets that Claire and Nada have been working on. That stuff is pretty cool, but also complicated.
+
+Are there any general miniKanren topics people would like to bring up?
+
+**Austin:** I have one. A lot of this is new to me. I'm finding out what the boundary is between miniKanren and logic programming in general. A lot of the reference material is in Prolog. I'm curious what's the distinction and if there are big philosophical differences between Prolog and miniKanren. I know that computing forwards *and* backwards is a defining aspect in miniKanren. Is there anything else to be aware of where the nature of those systems is different?
+
+**Dan:** I have a response to that. When Prolog first came out, the thing that made it really difficult for me to deal with Prolog was that absolutely everything was global. In miniKanren, the design was that everything should be lexical: if you want to define a relation, you have the option of setting it up inside a `letrec` or in a `global` define, however you want to do it. But you can make absolutely everything ready to be garbage collected at a moment's notice just by definiing all of your relations directly in a `letrec` so that when the `letrec` goes out of scope, you are done with it. That's a huge, huge difference. You don't think in terms of a global space that you can add to arbitrarily whenever I want (which you can do with Prolog) and then deal with on whatever level. That takes away power, but it's a conscious decision to take away that power.
+
+Does that make sense Austin?
+
+**Austin:** Yes it does. Currently I'm looking at a piece of Prolog code that I'm trying to port to core.logic. It might just be the syntax and semantics of how to put things together in miniKanren, but is there a big distinction between the goals in miniKanren and the clauses in Prolog?
+
+**Dan:** Let me address that a little bit. Prolog's rules have a certain fixed syntactic format. A lot of Prolog code will process the expressions: taking apart pieces, putting them back together, and then throwing them into the global database. Prolog has this extra flexibility. If you don't know you'er involved in it, then it's very complicated to figure out what's going on.
+
+Plus, they have this ability to cut `!/0` everywhere, which can cause a lot of pain. That's yet another variation.
+
+What I decided, working on Kanren, was that if I really wanted to take apart and pull pieces together of a particular goal expression, I could do that by making a thunk out of it using `lambda` and parameterizing the things I want to be playing with. There was no loss for me, abstractly, between having a fixed grammar versus allowing myself to just take an existing rule and put it to sleep on certain variables that I could fill in later on with a piece of code. Once I convinced myself that I could do all the things that [Prolog programmers] wanted to do, I concluded I knew Scheme well enough that I wouldn't have to [transform first order goals], so I don't have to play around with that notion anymore.
+
+You'll probably find a fair number of sophisticated Prolog programs using all this, which is called "meta-level reasoning". I don't know if that's helpful. How many lines of code is the piece of Prolog you're looking at?
+
+**Austin:** Including whitespace and comments, it's about 500 lines.
+
+**Dan:** That could take a while.
+
+**Austin:** I have a working version in core.logic that I feel decent about. I'm still trying to understand al the semantics of it. But now I think I'm hitting problems that I think involve the logical structure of the program rather than the implementation.
+
+**Dan:** Are there cuts everywhere?
+
+**Austin:** Yes.
+
+**Dan:** Okay. One of the fundamental things that the Prolog people insist on is being able to use a lot of cuts. That seems to be their growing interest. There's a really good, really elegant book [Clause and Effect](https://link.springer.com/book/10.1007/978-3-642-58274-5).
+
+**Will:** That Clause and Effect book is by Clocksin and Mellish. \[Editor's note: Clocksin is sole author on Clause and Effect, Clocksin and Mellish co-wrote [Programming in Prolog](https://link.springer.com/book/10.1007/978-3-642-55481-0)\]. 
+
+It's probably easier to translate from core miniKanren to Prolog in a sense. Although now we're really into the constraint stuff, which is not so trivial to translate. Like CLP(set) stuff that we're talking about: if your implementation of Prolog doesn't have support for that, then it's not so easy to implement at a user level.
+
+The more cuts there are, the more uses of `copy_term/2`, `(is)/2`, and metalogical operators, the harder it will be to translate to pure miniKanren. If the code is pure Prolog, then it shouldn't be that difficult. Like you said, it just depends on the logical structure.
+
+Philosophically, the emphasis we've had in miniKanren is towards purity, lexical scope, and all those sorts of things. For example, we don't have a way to add or retract a fact in a global database. `assert/1` and `retract/1` in Prolog are impure operators that Prolog programmers like to play with.
+
+The way Prolog tends to be used in practice is that: yes, declarative programming is good; we'll start out as a declarative specification. But then (because it's easier to implement, or more efficient), we'll start adding all these non-declarative aspects to the program and try to reason about those. The miniKanren philosophy is more like: Let's really commit to being declarative. That has some tradeoffs, but we'll see how far we can push it.
+
+The analogy I'd make is between a language like Scheme, which has `set!` in in and other "affecting operators", and a language like Haskell. If you get in a jam in Scheme where your purely functional program isn't efficient enough, then you can just do `set!`. But in Haskell, you don't really have that option (maybe you could go into a monad and do things under the hood), but it forces you to be more pure. I think that purity has lead to a lot of interesting results in the world of Haskell. I think that's also true in miniKanren: we're having to learn new techniques and come up with new constraints so that we can write things without using these extralogical operators. But it's definitely harder.
+
+Any other questions? WHat have you been working on Ambrose?
+
+**Ambrose:** I'm thinking of a question dealing with local type inference and solving polymorphic type variables in the presence of subtyping, but I don't know how to word the question, so I'll ask it after the CLP(set) stuff. I'm working on implementing a new local type inference implementation for Typed Clojure. I'm trying to think how to shoehorn core.logic in there somewhere, just to keep up-to-date with the constraint stuff. Subtyping and constraints sound pretty similar. That's pretty much what was missing when I was playing around with it a couple years ago, unification in the presence of subtyping. I have no idea how subtyping would work. Maybe it'll be better. I'll think of a better way to ask that question in an hour or so.
+
+**Will:** My understanding is that one of the reasons Nada wants the CLP(set) stuff is to do subtyping. Is that right, Nada?
+
+**Nada:** That's right. To even just do record subtyping, it makes sense to have CLP(set). In my wimpy implementation of CLP(set), I started doing this record subtyping and semantically it seems to be a good fit, at least for the simple structural subtyping of records. I just had to do a few tricks to avoid the usual nontermination issues. Like if I want to do type inference in addition to typechecking with subtypes and get the empty list instead of divergent behavior. I've been playing with this a little bit.
+
+One thing I've been running into in my implementation of CLP(set) is I get a lot of redundant answers. I think in Claire's port of CLP(set) to cKanren she's *really* using constraints, and that makes it better in retrospect. I think soon we'll have a good story for simple record subtyping.
+
+**Ambrose:** I guess I've got an extra complication. I've got normal polymorphic type variables. I guess they'd correspond to miniKanren logic variables. And I've got these dotted type variables, higher-kinded type variables, and these sorts of things. It's not really clear how to represent them. Maybe do the dotted type variables first and then other type variables. That's something I have no ideas for yet, just an interesting problem.
+
+**Nada:** I'm not sure in your particular case. I also have a more complex type system that I want to use core.logic for. In my case, I also think using type constraints might be useful. Either different type constraints for the different kinds of things, or just even tagged lists, but I'm not really sure how to go about it in general.
+
+If your type system is such that typechecking things that are annotated is decidable, but type inference in general is undecidable, then it might just be impossible [to avoid nontermination] when you runs things backwards.
+
+**Ambrose:** The classic case I always think of is trying to enumerate descendants of all the subtypes of a class in Java; there's just no way to do it. You can get all the ancestors, but going the other way is not a good idea.
+
+**Will:** What about Peter, Amir, or Nathan? Any questions?
+
+**Unknown:** I'm interested in hearing about constraint programming. I've got some things I want to try with it. I'm eager to hear more about that.
+
+**Will:** The set constraints will be super useful. We already have a number of uses in mind. Once we have it, I think that we'll realize there are lots of problems in the past that we didn't know how to solve which we now will have a chance at solving. Even things like going through Pierce's Types and Programming Languages book, I got stuck because of the sets. A lot of the things in that book are concerned with set manipulation.
+
+If noone else has any questions ore comments right now, we can change gears and talk about CLP(set) a little bit.
+
+\[Editor's note: A discussion about scheduling future miniKanren hangouts is omitted.\]
+
+Claire and Nada, would either of you like to explain what CLP(Set) is, and what the core operators are in that constraint system?
+
+**Nada:** I have the paper from [Dovier, Piazza, Pontelli, and Rossi called Sets and Constraint Logic Programming](https://dl.acm.org/doi/10.1145/365151.365169). This was my starting point to develop the wimpy miniKanren version that I have.
+
+In this paper, they support a set operation that takes a set and and element and constructs a set that adds the element. It's a term constructor [like `cons`], so you can unify with that. It also has membership, disequality, unification, union (a three place relation taking two sets and their union), a "disjoint" operation (which says that two sets have no elements in common), and a type constraint to say that some term is a set. Depending on how you use these other operations, it infers type constraints on them. For example, if you use the union operation, it infers that each term involved has to be a set. That's basically what you have in the language.
+
+All of these operations can be negated, so you have "union" and also "not union", "disjoint" and "not disjoint", etc.
+
+Only some of these operations have to be lazy constraints; the others can be computed directly. One example is membership, which can be expressed entirely in terms of these other operations.
+
+One catch in general is: in the way the rules are defined in this paper, many of the rewritings have `conda`s, essentially. That implies you can rewrite something into many options, and if any one of them succeed, then that's fine. That partly where you get the redundant answers. In this paper, they just show the rewrite rules and how you can get a solved form. I looked at their implementation in Prolog, `{log}`, and they use Prolog's backtracking to do this "any of" disjunction and rewriting. So in my miniKanren implementation, I did the same thing. I didn't use cKanren; I just started with what Dan Friedman presented last time. I have `conda`s all over the place--even in unification! Surprisingly, it works, but it's just a hack of course.
+
+So now I'm going to pass on to Claire to describe how she made things better in the cKanren setting.
+
+**Claire:** Like Nada said, things like unification (and especially `uniono`) can cause the number of answers to increase. As soon as you unify two sets (and maybe there are four ways to unify them) you will start getting more answers. In cKanren, `union`, `==`, etc. are all lazy constraints. It goes through the program, gets as much information as possible, and queues most of the unification and union work in the constraitn store. Right before reification (for those familiar with cKanren, in the constraint enforcement phase), it'll go through, pick out all the constraints, and [reify those it can't get any more information out from?].
+
+**Will:** Could you show some of the test cases and explain what they mean? For the CLP(set) stuff, if you see a couple examples, you get an idea of what it's trying to do.
+
+**Jason:** Does it support infinite sets? [No.]
+
+**Claire:** Here's a test case.
+
+```scheme
+> (run* (q)
+    (fresh (x y r s)
+      (== q `(,x ,y ,r ,s))
+      (== (set `(,x) r) (set `(,y) s))))
+'((_.0 s.1 _.0 s.1)
+  ((_.0 (set (_.1 : s.2)) _.1 (set (_.0 : s.2))) : (!in (_.0 s.2) (_.1 s.2)))
+  ((_.0 s.1 _.0 (set (_.0 : s.1))) : (!in (_.0 s.1)))
+  ((_.0 (set (_.0 : s.1)) _.0 s.1) : (!in (_.0 s.1))))
+```
+
+ We have some fresh variables, we unify them in a list, and then we do a final unification. What this syntax says is that `(set \`(,x) r)` is a set containing element `x` and the rest of the elemnts are in the set `r`. `(set \`(,y) s)` is some set containing `y` and the rest is some other set `s`. We have four different ways to unify this, which is why we get four answers.
+
+* `(_.0 s.1 _.0 s.1)`: It's possible that `x` and `y` are the same and that `r` and `s` are the same.
+* `(_.0 (set (_.1 : s.2)) _.1 (set (_.0 : s.2))) : (!in (_.0 s.2) (_.1 s.2))`: `x` and `y` are different and `r` and `s` are different, but they both extend the same fresh set `s.2`. Since these have to be proper subsets, `_.0` is not in `s.2`, and `_.1` is not in `s.2`.
+* `((_.0 s.1 _.0 (set (_.0 : s.1))) : (!in (_.0 s.1)))` and `((_.0 (set (_.0 : s.1)) _.0 s.1) : (!in (_.0 s.1))))`: These last two answers are similar to each other. [In the former], `x` and `y` are the same, `r` is `s.1`, `s` is `s.1` with `_.0` [already included] so that when you insert `_.0` to both, you get the same result. [And vice versa for the latter].
+
+These answers are really hard to read.
+
+**Will:** Claire, did you point out what `s.1` means? It's a set. You're changing how reification works. If you see "s" instead of an underscore, it's a set.
+
+**Claire:** Oh yeah. If you do:
+
+```scheme
+> (run* (q) (seto q))
+`(s.0)
+```
+
+If you say that `q` is a set, you'll get out `s.0` instead of `_.0`. `_.0` would be a fresh variable without any type, and `s.0` would be a set. If you look at Nada's version, she has constraints on all of her set variables that say something is a set. This is just convenience. Instead of a bunch of side constraints, if you have `s.0`, it must be a set.
+
+Here's a little more intuition on what `set` means.
+
+```scheme
+> (set '(x y z) (empty-set))
+{ x y z | ∅ }
+```
+
+This is a set with some terms `x`, `y`, and `z`, all extended the empty set.
+
+I don't have everything working yet. Nada has everything working.
+
+**Will:** I have to say, I like those braces and the empty set notation. It's pretty classy.
+
+**Claire:** Yeah. `set` is actually Racket's equivalent of records. I redefined how sets print out. I got it to print out with these cute braces so that it's easier to read.
+
+**Will:** Can you show an example using set union?
+
+**Claire:** Let's see.
+
+```
+> (run* (q)
+    (uniono (set '(x y) (empty-set))
+            (set '(y z) (empty-set))
+            q))
+'((set (x y z : ∅)))
+```
+
+If you union the set `{x y}` and the set `{y z}` then you get out the set `{x y z}` (built off the empty set). I'm glad that worked!
+
+**Jason:** Claire, is there a notion of sets in a permuted order? How does the representation deal with that? If I add to the empty set `'(a b c d)` and another set `'(d c b a)`, how does unification handle whether those two are the same set? In general, how is that problem dealt with? When I was hacking together a naive implmentation, it about just made me throw up my hands.
+
+**Claire:** This case?
+
+```scheme
+> (run* (q)
+    (== (set '(x y) (empty-set))
+        (set '(y x) (empty-set))))
+'(_.0)
+```
+
+**Jason:** Something like that, yes.
+
+**Claire:** Well, that's pretty much handled by the rules at the end. There are a bunch of cases about when you can actually do the unification. It's all covered by the `conde`s at the end. In this case, when everything is ground, you just do some `memq`s, and if everything works out, then just throw it away. But in a case with variables:
+
+```scheme
+> (run* (q)
+    (fresh (x y)
+      (== (set `(,x ,y) (empty-set))
+          (set `(,y ,x) (empty-set)))
+      (== q `(,x ,y))))
+'((_.0 _.0) (_.0 _.1) (_.0 _.0) (_.0 _.0) (_.0 _.0) (_.0 _.0) (_.0 _.0) (_.0 _.0))
+```
+
+I guess there are 8 different ways. to unify those together. If they're the same they unify just fine, and if they're different they unify just fine. That's a lot of answers.
+
+**Jason:** Dan wants to ask if there's a change to `unify` that you had to do.
+
+**Claire:** Yes! `unify` is totally different.
+
+**Dan:** Can you show us the code?
+
+**Claire:** Yes, it's available on a branch [https://github.com/calvis/cKanren/tree/sets](https://github.com/calvis/cKanren/tree/sets). I haven't merged it in yet because I literally had to rewrite how cKanren works to make this go.
+
+**Dan:** What were the philosophical changes to cKanren?
+
+**Claire:** It's basically facilitated by Racket generics. I had to define what's called a "generic interface" in Racket that my set structure can implement. I said sets are "unifiable", and use a certain procedure to unify them. So `tree-unify` sort of punts on everything now. If it's a pair, or some symbols or numbers, I know what to do, great. Otherwise, see if this thing is unifiable and if so, punt to whatever procedure implements it.
+
+**Dan:** Like ad-hoc polymorphism, basically?
+
+**Claire:** Yes. This link specifically is what `unify` turned into:
+
+[https://github.com/calvis/cKanren/blob/sets/tree-unify.rkt#L21](https://github.com/calvis/cKanren/blob/sets/tree-unify.rkt#L21)
+```scheme
+;; unifies two things, u and v
+(define (unify-two u v)
+  (lambdam@ (a : s c)
+    (let ([u (walk u s)]
+          [v (walk v s)])
+      (cond
+       [(eq? u v) a]
+       [(and (unifiable? u)
+             (unifiable? v)) 
+        (bindm a 
+         (composem
+          (compatible u v)
+          (compatible v u)
+          (gen-unify u v)))]
+       [else #f]))))
+```
+
+It asks if the things are actually `eq?`. If they aren't, it checks to see if they're both unifiable where it tries a generic unify method which is defined rgiht below. I needed Racket's generic interfaces to make that work.
+
+**Dan:** In [Typed Logical Variables in Haskell by Koen Claessen](https://www.sciencedirect.com/science/article/pii/S1571066105805444), he basically has that happen automatically with Haskell's typeclasses.
+
+**Claire:** That makes sense. I had to find some defaults for things like pairs and vectors that are builtin to Racket; I couldn't have them atually implement the interface. For everything else, you have to define it.
