@@ -702,3 +702,171 @@ It asks if the things are actually `eq?`. If they aren't, it checks to see if th
 **Dan:** In [Typed Logical Variables in Haskell by Koen Claessen](https://www.sciencedirect.com/science/article/pii/S1571066105805444), he basically has that happen automatically with Haskell's typeclasses.
 
 **Claire:** That makes sense. I had to find some defaults for things like pairs and vectors that are builtin to Racket; I couldn't have them atually implement the interface. For everything else, you have to define it.
+
+**Will:** Nada, do you want to talk about the state of your implementation? We have these two implementations now that are both trying to go forward taking (somewhat) different approaches. I guess they will converge at some point?
+
+**Claire:** I hope so.
+
+**Nada:** What Claire is doing is definitely what we will base [constraint set programming in] core.logic on. It's much closer to what David had in mind. What I've done is for prototype purposes. I wanted to understand this paper, implementing the rewrite rules just as they are, and see if there are any concerns already. Once we go to the lazy approach, most of these concerns disappear. One of them was that if you look at the rules as they are implemented in the paper, then you get a different number of answers depending on the order of the clauses. I think that's something that will also disappear with constraints.
+
+Claire, actually I was confused in your example that Jason asked about. Why do you get so many answers? It's just unifying two sets that are grounded (and that are the same), right? Oh! Because they are variables. Okay, now I see.
+
+One thing that I was pleased with was that I basically used a type inferencer that Will and Dan put together in their Strange Loop talk, and I was able to extend thsi a little bit to handle records: record selection and record constructors. That works well with subtyping. I was pleased that my implementation could cover this. The next step for me-when I meet with David in Zurich on Tuesday--is to look at what Claire has done and see how we could put it in core.logic.
+
+**Will:** Very cool. Does anyone have any more questions about the set stuff? Any ideas of how you might use sets, if you had this?
+
+**Dan:** I'm curious about Russell's Paradox. Does it cause any problems, Claire?
+
+**Claire:** What is Russell's Paradox?
+
+**Dan:** Can you be a member of your own set?
+
+**Jason:** No, it's the set of all sets that do not contain themselves as members.
+
+**Dan:** Can you do that?
+
+**Claire:** No. No set can contain itself.
+
+**Dan:** Does it fail or go into an infinite loop?
+
+**Claire:** It fails.
+
+**Will:** Is that a generalization of the occur check?
+
+**Claire:** Yes.
+
+**Jason:** Why shouldn't sets be able to contain themselves?
+
+**Nada:** Because it would violate the occur check, right? It's like why a list cannot contain itself. It's the same thing.
+
+**Jason:** Okay. I guess I understand that *mechanically*. Is that a set-theoretic problem that I'm just blanking on?
+
+**Nada:** Russell's Paradox has a metaphor about a barber: You're in a town where everyone who doesn't shave himself is shaved by this barber. So the question is: who shaves the barber? That's the formulation. In general when you have logic with sets, the way to deal with these issues is that if you want to quantify over a set you always start with another set. If you have, say, the set of integers, I can always take a subset of that. I can define a subset by using the set of all integers along with a predicate. With the rules we have in the system, we can do a restricted quantification. It's possible using recursion to express things like "forall x in a set, this implies a property". You can encode this using recursion.
+
+**Will:** Would that approach to universal quantification be useful for *your* type system, Ambrose?
+
+**Ambrose:** I have no idea haha.
+
+**Will:** Fair enough. Hopefully we'll get it to you and then you can play around with it.
+
+Does that help answer your question, Jason?
+
+**Jason:** Yes, thanks.
+
+**Dan:** Do you have any problems with taking the union of two infinite sets?
+
+**Claire:** No. I can show you an example: `x` is infinite, `y` is infinite, and `z` is not equal to the empty set.
+
+```scheme
+> (run* (q)
+    (fresh (x y z)
+      (== q `(,x ,y ,z))
+      (uniono x y z)
+      (=/= z (empty-set))))
+'((((set (_.0 : s.1)) s.2 (set (_.0 : s.3)))
+   :
+   (!in (_.0 s.1) (_.0 s.3))
+   (union (s.1 s.2 s.3)))
+  ((s.0 (set (_.1 : s.2)) (set (_.1 : s.3)))
+   :
+   (!in (_.1 s.2) (_.1 s.3))
+   (union (s.0 s.2 s.3)))
+  ((set (_.0 : s.1) (set (_.0 : s.2)) (set (_.0 : s.3)))
+   :
+   (!in (_.0 s.1) (_.0 s.2) (_.0 s.3))
+   (union (s.1 s.2 s.3))))
+```
+
+We get three answers with a `run*`. Will and I stared at this for a very long time last night trying to understand what it's saying.
+
+The first answer says that if you start off with sets where `s.1` union with `s.2` is `s.3`, and you union `s.1` (along with some extra element `_.0`) with `s.2`, then you get `s.3` (along with that extra element `_.0`). The second case is if you have the extra element on the second set instead. The last case says if the same extra element exists on both sets, then you just get it once in the answer. That's how you express the union of those infinite sets.
+
+**Will:** When you say infinite sets, you don't just mean arbitrarily large, right? You mean it can contain countably-infinitely many values?
+
+**Nada:** My understanding is that the number of elements is conceptually finite, but it can be undefined [fresh]. But it's finite.
+
+**Will:** So it's sort of like if you had a list in miniKanren that had a fresh tail. Metaphorically, the list is finite, but you could keep extending it as long as you want.
+
+**Nada:** Yes.
+
+**Will:** That's my understanding, too. I don't think it's infinite. It's not like you have all the integers in a closed set.
+
+**Jason:** I was just about to ask how you'd represent integers, and evens, and what their set difference looks like.
+
+**Nada:** At least for the paper, it's finite sets. Let me double check. For my application I was happy with finite sets--as long as I could have sets within sets, that was important. In the paper they have a term for it. They say it's called *hereditarily finite hybrid sets*: sets that contain a finite number of elements, each of which is either an atom or another set. In our case, atoms include lists and tree terms. But it's that notion of sets.
+
+**Will:** Dan, did you say you'd seen work on infinite sets in logic programming?
+
+**Dan:** I was under the impression that one of the papers that I looked at was for infinite sets that grew in the same way that Oleg numbers grew.
+
+**Will:** Well, I think *these* sets grow in the same way Oleg numbers grow. But the Oleg numbers themselves are all finite too. I mean, they can be arbitrarily large and you don't have to fully ground them, but that's different from being infinitely large.
+
+**Dan:** Well I don't know how different that really is.
+
+**Will:** I think it's very, very different.
+
+**Dan:** Given that streams have the same property, and people are comfortable calling streams "infinite", I think it's not that different.
+
+**Will:** It's the difference between something being unbounded and something being infinite. Anyway, I think there is a difference. Hopefully it's general enough for our purposes.
+
+**Dan:** Then we'd have to say streams are only *unbounded*. It's only the recursion that you make that allows them to get longer. In this case, it's only the unification of a variable to another data structure [tree term] that happens to have another variable that could be unified which makes those longer. I don't see a deep philosophical difference between the two. Just my thoughts.
+
+**Will:** I think there is a deep philosophical difference and a very practical difference, too. But we'll see. An individual Oleg number is not like the ordinals. 
+
+**Dan:** Of course not. But ACL2 does support ordinals, you know.
+
+**Will:** Yeah, and I imagine we could support ordinals, too (symbolically, or something like that). I don't think an Oleg number is like that.
+
+**Dan:** Yeah.
+
+**Jason:** I've heard us talk about partially-instantiated Oleg numbers (and I'd have to check the book), but The Reasoned Schemer might use the terminology: "any even number". *That* sounds in the realm of truly infinite, no?
+
+**Will:** Nope. That's representing, in a way, all of the finite-length even numbers. For example, the Oleg number which is the list `\`(1 . ,x)` (where `x` may be instantiated to a legal Oleg number) represents any positive *odd* number of finite value. In a sense, you could say you're representing countably-infinitely many terms as that one term. But any of the numbers represented by that terms is itself finite. See what I'm saying? You're basically representing infinitely many finite integers that are odd.
+
+**Jason:** I may have lost the thread of the analogy, but that's alright for now.
+
+
+**Will: [1:21:57](https://youtu.be/WMjvyizzE78?t=4916)** Okay. Anything else people have? Austin, how's your program coming along? It sounds like you've been hacking some miniKanren stuff recently.
+
+**Austin:** It's been really great for exploring a lot of these subtle nuances, especially with things like negation and negation-as-failure. I'm at point where I'm laerning the boundary between what is logic programming versus miniKanren versus the semantics of the interpreter I'm working on. It's clear that this type of programming is a very large paradigm shift. It's very different from what I've done in the past. I'm finding out that the debugging (and how I have to proceed) has to be different. I'm curious about learning what that entails.
+
+**Will:** Another comment I'd make about the Prolog philosophy is that the logic programming community--for good or for bad (I happen to think it's probably done more damage than it's helped)--decided a long time ago that Prolog was going to be the only language they were going to ever use, in effect, whereas in the functional language community, we have quite a few languages currently in use: the ML family, Lisp/Scheme/Racket, Haskell, dependently-typed languages, and all that stuff. I happen to think that's a real strength. For example, as much as I like Scheme, if you only had Scheme, you'll probably never come up with a language that looks like Haskell. It's just going to be too different.
+
+I guess they didn't consciously make this decision a long time ago, but it turned out (through the Japanese 5th Generation Program and all that stuff) that Prolog was (and still is) *the language* for logic programming research. I went to the International Conference for Logic Programming, and I was suprised that there weren't people doing Mercury, Curry, or these other logic languages. That stuff seemed to the Prolog people to be way out there in left field. But what you do see is that Prolog is sort of a *family* of languages, like Lisp. You see things like alphaProlog (and we now have alphaKanren) for nominal logic programming. Or you'd see constraint variations like CLP(set) can be done in an extension to Prolog.
+
+Prolog really is a giant family of languages. If you look at something like [Ciao Prolog](https://ciao-lang.org/): syntactically it looks like Prolog, but actually it extends Prolog in every possible way you could imagine. It's not really very Prolog-y in some ways. It's kinda hard to compare miniKanren with Prolog, because then you'd have to decide what is miniKanren and what is Prolog. If you're talking about the original Prolog in the early 1970s and the original miniKanren in The Reasoned Schemer, that's very different than if you compare Ciao Prolog with miniKanren with nominal logic programming and all the constraints. It's different. Both languages can be extended in lots of ways.
+
+There are lots of different languages that are called "Prolog" or that extend Prolog, and at this point there are lots of variants and extensions of miniKanren. I think it's more like a difference in philosophy or basic way of approaching problems. There are probably thousands of extensions to Prolog significant enough to be considered different languages at this point.
+
+**Austin:** I have a more specific question that came up when developing my program. Has anyone explored alternative goal constructors? I'm trying to translate from Prolog and it's not a one-to-one mapping, obviously. I'm ending up with fresh expressions that have 15 variables in them. I don't know the different in interface between Scheme and core.logic, but core.logic has a really nice pattern matching system with core.logic (but it's still not a perfect match). I wonder if there's different constructors for creating goals that anyone's considers.
+
+**Nada:** When David saw some of the translation I did from Prolog to core.logic, he was struck by this syntactic difference. It's easier to read the Prolog because you don't have to make up all these intermediate names. In the Github repo, he has some pages about ideas he's had for syntactic improvements. I'll share the link in the IRC channel.
+
+**Will:** Things could definitely be made much nicer syntactically. In miniKanren, we don't even normally use the pattern matchers. In the pattern matcher we have it's kinda hard to understand some of the scoping rules, I've thought. Even compared to the core.logic pattern matcher, Prolog is still terser, in a way.
+
+Part of the reason Prolog can be so short is that they don't really about lexical scope (like Dan said). You can just introduce a variable anywhere at any time. Everything is global. To some extent, because we care about lexical scope, our programs will probably always be a little more verbose. But for sure, they don't need to be as verbose as they are right now.
+
+**Nada:** Just a side note: When I translate Prolog programs, one thing that comes up is how to deal with all this global stuff. Especially when you have some predicate you want to change which is used by other predicates. In miniKanren, it turns out to be much nicer to just use higher-order goals. So you have a goal (a function) that just takes another goal as a parameter. That's a nice simple trick. In some ways you get some improvement by being embedded in a functional programming language and being able to mix both styles.
+
+**Austin:** Nada, are there any higher-order goals that you've found useful which we might not be familiar with?
+
+**Nada:** When I did the metainterpreter stuff it was used all over the place. Even just this [closure?] relation \[[lam](https://github.com/namin/minikanren-confo/blob/master/src/supp.clj#L37)?\] which was object-ifying in one step. Let me see in the repository if I can find something.
+
+**Will:** One thing I find often comes up are similar to simple functional abstractions like `map` or `reduce`. If I'm writing an interpreter that needs to handle any number of expressions passed into a procedure application, then sometimes I'll write/reuse a `mapo` relation that takes a goal, a list, and the "processed" list. Stuff like that.
+
+```scheme
+(define mapo
+  (lambda (g li lo)
+    (conde
+      [(== '() li) (== '() lo)]
+      [(fresh (ai ao di do)
+         (== `(,ai . ,di) li)
+         (== `(,ao . ,do) lo)
+         (g ai ao)
+         (mapo g di do))])))
+```
+
+**Nada:** For me, it's moreso to separate the concrete things that have to do with the particular domain from the operational relations that can be applied to each one of those domains. In that case I use higher-order goals for the operational stuff. I have some examples. It's mostly with the metainterpreter that I use this.
+
+**Will:** Cool. If anyone has suggestions for topics for next time, let me know. I hope people keep these discussions going in the message group or the IRC and start growing the miniKanren/core.logic community somewhere. I was reading [Makers by Chris Anderson](https://www.amazon.com/Makers-Industrial-Revolution-Chris-Anderson/dp/0307720969) and he said that the DIY drone/aerial robotics stuff he did got a big boost by having some sort of community site that was easier for people to participate in than a blog or a wiki. If people also have ideas about that, please let me know. I think this is a good stopping point. See you next week. Maybe we'll have a working version of CLP(set) then.
+
