@@ -83,4 +83,374 @@ I thought there were four things. You ported all the stuff to Racket. You've bee
 
 [Discussion of the IU 3d printing club's antenna is omitted].
 
-[19:35](https://youtu.be/VSpq3qK9L88&t=1175) I guess it's time to play stump the chump. Does anyone want to challenge me to translate some code into miniKanren, or must I be reduced to finding my own challenge? [From the chat:] "Write miniKanren in miniKanren." That's something I've wanted to do for a while. I don't know if I could live code that. It is true that there's a purely functional Scheme implementation of miniKanren, so I suppose that's fair game. Let me think about this.  [From the chat:] "No". Okay, Claire retracts the challenge.
+[19:35](https://youtu.be/VSpq3qK9L88&t=1175) I guess it's time to play stump the chump. Does anyone want to challenge me to translate some code into miniKanren, or must I be reduced to finding my own challenge? [From the chat:] "Write miniKanren in miniKanren." That's something I've wanted to do for a while. I don't know if I could live code that. It is true that there's a purely functional Scheme implementation of miniKanren, so I suppose that's fair game. Let me think about this.  [From the chat:] No? Okay, Claire retracts the challenge.
+
+Zippers and tree rewriting? Maybe. What works well for this game is a fairly small amount of self-contained, purely functional code--that's something we could translate. It doesn't have to be Scheme. It could be mathematical rules or something like that. Things in Matt Might's blog posts have been pretty good.
+
+[Reading chat:] Anything that uses nominal logic. Okay. Things like interpreters, type inferencers, and other things which involve lexical scope are good candidates for nominal logic.
+
+I could try doing miniKanren-in-miniKanren. I don't know. I was thinking about making some kind of metainterpreter for miniKanren, but I guess we could just try implementing the Scheme version, but that's a little longer. I don't know how long it would take; I don't know if we could do it all. I'm trying to do something where I can do the whole translation in one sitting and show you. But I'm tempted to try that, but it would be pushing it time-wise.
+
+That's something I might try, anyway: taking the implementation at the back of The Reasoned Schemer and trying to miniKanrenize that. That's a fallback; we'll try that if we can't come up with something more appropriate. It also has "fail" written all over it. I'm not even sure what it means, but it would be kind of cool. We'd have substitutions floating around and stuff.
+
+How about this: let's look for a couple minutes for anything else. If not, we'll actually try miniKanren-in-miniKanren and see how well it works. I can at least probably start translating some of the helpers and see how that goes. We could see if there are any cool Matt Might blog posts. I've translated a few of Matt's stuff. Or if there's a paper that has a rewriting system, those are usually straightforward to translate. Let's see what Matt has.
+
+**Austin:** Another thing that I'm interested in is miniKanren's position on extralogical predicates like `findall/3`.
+
+**Will:** Things like `setof/3`, `bagof/3`, and `findall/3` in Prolog are all interesting and useful. You can do universal quantification (to some extent) using those. I was talking to Ken Shan about that a fair amount this weekend. My stance on it is that those are impure.
+
+I'm trying to remember what `findall/3` does (versus `setof/3` and `bagof/3`). Do you remember the semantics for that operator?
+
+**Austin:** `findall/3` takes a template and a goal, and it instantiates the template as many times it can using the goal and puts all the results in a list, which is the third argument.
+
+**Will:** Is it sort of like a mapping operator?
+
+**Austin:** The way I understand it is you're really searching the extension of the search space at that point where you write the `findall/3`. Like if I was doing an ancestry query and I wanted to find all the sons of somebody.
+
+**Will:** It sounds very similar to `setof/3` and `bagof/3`. I think they are related, but I don't remember exactly. I'm not much of a Prologger. I've read a lot of Prolog stuff, but I haven't spent a lot of time using it. I can tell you about `setof/3` and `bagof/3` which I think are similar. The idea of `setof/3` and `bagof/3` is this:
+
+If you do something like `(membero x ls)`, it'll give you one member at a time. But maybe you want all of the `x`s at the same time. Right now you'd have to do a `run*` and look at the answer. `setof/3` and `bagof/3` would let you run that goal "locally" in a sense and accumulate the answers in a term which you can then use and inspect. I think that behavior is similar to `findall/3`. They're very useful and very cool. The problem in my mind is that they're not relational.
+
+To me, anything "relational" means you can swap the goal ordering and the semantics don't change. At least with `setof/3` and `bagof/3`, the answers you get back/accumulate depend on the groundness of the terms. The order in which you make those calls can change the answer you get. I don't know of a way to make those relational. It's sorta like the `copy_term/2` problem I described in an earlier hangout: depending on the position of `copy_term/2` in the program, the answer you get back can be different. It turns out for `copy_term/2` there are some times where you can use tricks like special forms of tagging plus nominal unification to make a safe version of `copy_term/2`. In our alphaLeanTAP paper, we're only going in one direction but we can still use it safely and relationally. There might be restricted uses of `findall/3`, `copy_term/2`, `setof/3`, and `bagof/3`, but I think the general versions of those operators are non-relational: swapping them around can change the semantics of your program.
+
+**Austin:** The context that is coming up for me is finite failure. I need to show that all possible extensions would fail. I've been trying to understand how you might do that without `findall/3`. I'm not sure if you can do it at the user-level of miniKanren or if a different goal constructor can tune this part of the search. It also relates to what you said about `membero`: oftentimes I want to be able to say that `x` is a member of a list [without instantiating its position in] the entire list. I want the next operation to be able to work with the list, but I want to lazily search each branch to find all the elements of that list.
+
+**Will:** Encoding negation is generally just tricky. It sounds like you want to do a universal quantification to show the set is empty, that kind of thing. There are probably ways to encode this in miniKanren without using these operators, but it might be kinda tricky. It's on a case-by-case basis. It's gets very tricky with negation in general. We don't like using negation as failure because that means using `conda`, `condu`, or that kind of thing. Negation is the nasty beast of logic programming. That's why [answer set programming](https://en.wikipedia.org/wiki/Answer_set_programming) is taking off: it's probably the best story (yet) about how to do negation in logic programming, but that's for things that are finite.
+
+I don't have a simple answer other than to say in general negation and Prolog-style programming is just hard: keeping your programs declarative (and relational) and getting decent notions of negation are tricky. That's one of the reasons we've been going to Constraint Logic Programming: the constraints give us sorta limited forms of the nagation. You can use finite domain constraints, and by continuing to shrink over the domain you can prove that no answer exists (by doing a `run*` and getting back the empty set)`. But once again, you're looking outside the program to see if there are no answers.
+
+If you want to say something like "if there are no answers that exist, then do something" then you're getting into negation-as-failure type issues. `findall/2` would let you say "if the set of thnigs that satisfy this goal is empty, then do something". But you're starting to dance between what's relational and what's not, unless that's not really a concern of yours (like if running backwards isn't really a concern).
+
+I think `setof/3` and `bagof/3` are actually quite easy to implement in miniKanren. I did it a few years ago.
+
+**Austin:** So what is the context, then, in which you're considering using those extralogical predicates, if not negation?
+
+**Will:** Oh! The context where I would like them is to be able to encode universal quantification, but I don't know how to do it in a purely relational way. In practice, I just don't use those. Every once in a while I think of the problem some more, but I don't have any great insight or solution in how to jury-rig those operators to make them more relational. I don't know what's possible, I just try to write programs that don't use those.
+
+**Austin:** So you're not interested in miniKanren having this meta layer of extralogical goals or anything like that as part of the system?
+
+**Will:** I'm pretty sure you can encode those things right now. We *do* have some extralogical operators: `conda`, `condu`, and `project`. Just those three things alone are actually really powerful: you can encode some pretty crazy stsuff with that. I don't have any problem with it existing, it may be worth implementing, and I think core.logic *should* have all that stuff. I think it's easy to encode all those things just on top of miniKanren right now: you can always get your hands on the substitution if you write a low-level goal.
+
+Personally, my main interest is not having to write those. My main interest is how to write interesting programs that do the same work without having to resort to extralogical operatiors. The extralogical operators, to some extent, destroy the declarativeness. That may require ingenuity or new constraints. Instead of having a dirty operator which works in general but inhibits your ability to run backwards, the approach I'm more interested in is special constraints for particular cases, or using a very limited form of negation to encode the properties you want. It's harder and it probably requires more ingenuity, but my main concern is being able to run backwards.
+
+That's philosophically how I see one of the big differences between Prolog and miniKanren. The Prolog programmers may start out with a logical specification, but as soon as they start running into trouble with expressing things, negation, or performance, they'll just start using extralogical operators or `assert/1` and `retract/1` to add or remove things from a global database. Real Prolog programs tend to have a lot of that stuff in it. At that point, I think the reasoning about the programs is harder. At some point once you've added enough extralogical features, I personally start questioning how close that is to logic programming and questioning why is it better to use impure features of logic programming versus, say, functional programming. These are things that we could argue. Prolog has a long history and it's been very successful in AI programming; they get results. But then again, people can code things in C and get results, too. I'm looking for higher levels of abstraction. Well, you could argue that `findall/3` and `bagof/3` have high levels of abstraction, but they break what I consider the most important property of logic programming, which I'm not willing to give up.
+
+Anyways, I'll get off my soapbox. If you want those, we can implement them. It's not too hard. It's probably a simple macro.
+
+Nathan, did you want to do finite state machines? They're a little different than regex. It's a different way of looking at it. Just brainstorming.
+
+So the candidates we have are finite state machines, implementing miniKanren in miniKanren, and just trying to grab something off of the blog.
+
+Claire, do you have any Racket code sitting around? Any cool programs worth translating? Do you have a CPSer, or anything like that.
+
+**Claire:** No. Let's see. I have an implementation of a functional queue that I was using this week.
+
+**Will:** Would that be interesting to run backwards?
+
+**Claire:** I don't know. Maybe.
+
+**Will:** Nathan, do you have some code for the FSMs that would be ready to go?
+
+**Nathan:** Not in front of me. I was just thinking of standard string recognition or something like that.
+
+**Will:** Well, I do have some finite state machine stuff laying around that we could show. But it would kinda be cheating since I've already done a lot in that space. I feel like I've already seen the code to some extent.
+
+Obviously, I've seen the miniKanren code before, but I've never tried translating the miniKanren implementation into miniKanren! Maybe we should just try that and see what happens. I smell disaster, but it would be interesting, at least. Maybe it would be okay. Let's try it; let's at least take a look at the code and see if it makes sense to translate it into miniKanren. Sometimes I'll look at code and think woah, I don't even want to think about translating that. Other times I'll look at code and think oh yeah taht'll be easy (and sometimes it'll turn out to be harder). Let's see which version we want to translate. Probably not the one from the book.
+
+Oh! We could maybe do Oleg's sokuza-kanren. Oleg has this super minimal version of miniKanren. That might be short enough to implement. Let's look at the website and find something we could translate that's not too bad.
+
+Here's [regular miniKanren](https://github.com/miniKanren/miniKanren), let's look at that real quick. These macros are going to be interesting. I'd have to translate `reify`. Forget this version, it's really complicated.
+
+**Claire:** Isn't there a [simple-miniKanren](https://github.com/miniKanren/simple-miniKanren). That's the one you sent me to.
+
+**Will:** Yeah, let's see if this one is any better.
+
+```scheme
+(define-syntax rhs
+  (syntax-rules ()
+    ((_ x) (cdr x))))
+
+(define-syntax lhs
+  (syntax-rules ()
+    ((_ x) (car x))))
+
+(define-syntax size-s
+  (syntax-rules ()
+    ((_ x) (length x))))
+```
+
+**Claire:** When did those all become macros?
+
+**Will:** I don't remember haha. Well, we could start off with `unify`. It might be kinda fun to have a unifier that runs backwards. `unify` is kind of like the heart of the system anyways.
+
+Even simple-miniKanren has a lot of code; some of the stuff we wouldn't be able to translate. We could try doing a unifier in miniKanren, that would be really fun. But I want to look at [sokuza-kanren](https://github.com/miniKanren/sokuza-kanren), Oleg's really simple, stripped down version. That one might be better. Let's see what we've got. Hopefully this one doesn't have as many macros.
+
+```scheme
+(define (conj f1 f2)
+  (lambda (x)
+    (apply append (map f2 (f1 x)))))
+```
+
+Ew, `apply`. Hm.
+
+\[Will reaches the end of the code.\] Is that it? That's the whole thing. I don't know if there's enough here to be interesting. Oh no, he's using higher order stuff--I guess that's just trying to show how the stream works.
+
+Let's start with unification in simple-miniKanren and go from there. Let's find `unify` in there.
+
+```scheme
+(define unify
+  (lambda (u v s)
+    (let ((u (walk u s))
+          (v (walk v s)))
+      (cond
+        ((eq? u v) s)
+        ((var? u) (ext-s-check u v s))
+        ((var? v) (ext-s-check v u s))
+        ((and (pair? u) (pair? v))
+         (let ((s (unify
+                    (car u) (car v) s)))
+           (and s (unify
+                    (cdr u) (cdr v) s))))
+        ((equal? u v) s)
+        (else #f)))))
+```
+
+Okay, it [depends on] `ext-s`, `ext-s-check`, `occurs-check`, and `walk`. Actually, `unify` has quite a bit in it. If we could implement `unify`, that would be pretty good.
+
+So I'm proposing that we implemented the unification in miniKanren, does that sound good? Okay, let's see how it goes. Even `unify` has a few helpers. It would be fun to have a unifier that runs backwards; we've never had that before.
+
+Austin, you wanted to see nominal unification, right? That might come up here, I'm not sure. We should keep and eye out for that.
+
+What I'm going to do is copy in some of the Scheme definitions from simple-miniKanren. `unify` uses `ext-s-check`:
+
+```scheme
+(define ext-s-check
+  (lambda (x v s)
+    ((occurs-check x v s) #f)
+    (else (ext-s x v s))))
+```
+
+`ext-s-check` uses `ext-s` and the occurs check:
+
+```scheme
+(define ext-s
+  (lambda (x v s)
+    (cons `(,x . ,v) s)))
+
+(define occurs-check
+  (lambda (x v s)
+    (let ((v (walk v s)))
+      (cond
+        ((var? v) (eq? v x))
+        ((pair? v)
+         (or
+           (occurs-check x (car v) s)
+           (occurs-check x (cdr v) s)))
+        (else #f)))))
+```
+
+We're going to need `walk`.
+
+```scheme
+(define walk
+  (lambda (u S)
+    (cond
+      ((and (var? u) (assq u S)) =>
+       (lambda (pr) (walk (rhs pr))))
+      (else u))))
+```
+
+And `var?`
+
+```scheme
+(define-syntax var?
+  (syntax-rules ()
+    ((_ x) (vector? x))))
+```
+
+`rhs` and `lhs` aren`t very interesting, but we might as well grab those.
+
+```scheme
+(define-syntax rhs
+  (syntax-rules ()
+    ((_ x) (cdr x))))
+
+(define-syntax lhs
+  (syntax-rules ()
+    ((_ x) (car x))))
+```
+
+We better put the macros at the top of the file. I think that's it. We should be able to load this and do a couple unification examples.
+
+```scheme
+> (load "unifier.scm")
+> (unify 5 5 '())
+()
+> (unify 5 6 '())
+#f
+```
+
+That works! Let's see if we can make a var as well.
+
+```scheme
+> (unify 5 (var 'x) '())
+((#(x) . 5))
+```
+
+Yeah. Okay, cool. That seems to work. Do people understand what the interface to unification is? If not, I'll just show you real quick.
+
+`unify` takes two arbitrary terms, `t1` and `t2`, and a substitution which is represented as an association list. So `'()` is the empty substitution.
+- If two terms are identical, then you don't need to extend the substitution. That's why we get back the new substitution as empty when we do `(unify 5 5 '())`.
+- If we try unifying two terms which cannot be made equivalent in any extension oft he current substitution, then it just fails with `#f`.
+- If we try unifying, say, 5 and the variable `(var 'x)` in the empty substitution, that succeeds. And the new substitution `((#(x) . 5))` is saying 5 must be substituted in for `x`.
+
+So thsoe things seem to work. Let's do some more interesting unifications. If we unify two variables, for example:
+
+```scheme
+> (unify (var 'x) (var 'y) '())
+((#(x) . #(y)))
+```
+
+Now `x` and `y` are associated. We can also try something with a nonempty substitution. We could say something like:
+
+```scheme
+> (unify (var 'x) 5 `((,(var 'x) . 6)))
+```
+
+Actually we have to be careful here. This is a good trick question. Any thoughts about what this unification should do? Will it succeed or fail?
+
+**Austin:** Fail.
+
+**Will:** You think it'll fail, because `x` can't be 5 and 6 at the same time, right?
+
+**Austin:** Right.
+
+**Will:** *I* think it will succeed. Anyone else think it will succeed? This could be a trick question. I think that will actually succeed. Claire, what do you think?
+
+**Claire:** I think it should succeed.
+
+**Will:** And why is that?
+
+**Claire:** Because they're different variables [according to `eq?`].
+
+**Will:** Yes!
+
+**Claire:** I haven't looked at the code, but I think that still holds.
+
+**Will:** I think so, too. Let's see.
+
+```scheme
+> (unify (var 'x) 5 `((,(var 'x) . 6)))
+((#(x) . 5) (#(x) . 6))
+```
+
+Yeah. Because these `x`s are actually different. If we want it to fail we need to let-bind the logic variable.
+
+```scheme
+> (let ((x (var 'x)))
+    (unify x 5 `((,x . 6))))
+#f
+```
+
+Now those `x`s refer to the same `(var 'x)`, and sure enough, that fails. The thing is, every call to `var` creates a new variable. Even if they have the same name, that doesn't matter. The vars themselves in our representation are vectors. It's pointer equality. You're getting structures that are `equal?` but not `eq?`. In fact, I can show that.
+
+```scheme
+> (equal? (var 'x) (var 'x))
+#t
+> (eq? (var 'x) (var 'x))
+#f
+```
+
+They're equal, but not pointer-equal. Does that make sense Austin?
+
+**Austin:** Yes.
+
+**Will:** Okay, cool. So that actually might be kinda hard to express in the miniKanren version of miniKanren. We might have to thread through a counter (or something like that) so that we can get both the `equal?` and `eq?` behavior. That something we'll have to think about.
+
+Anyway, that's the interface for 'unify`. The first question I can think of is: what would it mean to run `unify` backwards? If you were to make `unifyo` (a relation instead of a function), what would that look like? Any thoughts about that? How would this change if it's a `unifyo`?
+
+**Austin:** The third argument would be the result.
+
+**Will:** We would actually have a *fourth* argument. We would add one more argument. We'd have "term 1", "term 2", the original substitution, and the *new* substitution--the potentially extended substitution, or `#f`. Sorta like the "answer". This is fun. You'd be able to feed in an extended substitution and ask what the original substitution in which these two terms unified and it'll start generating substitutions. Or, you'll be able to set the result to `#f` (meaning the terms didn't unify) so give me two terms that *don't* unify in this current substitution. You'll be able to play those sorts of games, which is interesting. I think `unifyo` does make sense.
+
+You'd be able to do something like:
+
+```scheme
+> (run* (q) (unifyo 5 6 '() q))
+(#f)
+> (run* (q) (unifyo 5 5 '() q))
+(())
+```
+
+It would get more interesting if you do things saying the output is some extended substitution.
+
+```scheme
+> (run* (q) (unifyo 5 t2 q `((,(var 'x) . 6))))
+```
+
+You could play those sorts of games. That sounds kinda fun; we'll have to see how it works.
+
+In the process of writing this, we'll have to write some simpler things like `walk`, which does variable lookup in a triangular substitution. We'll have some "mini" relations as well. Hopefully that will work well. Let's give it a shot.
+
+I'll add `#!eof` in front of all the Scheme code. That's Chez Scheme's indication that the end of the file has been reached (logically, for Scheme). Anything belowe the `!#eof` will be ignored.
+
+`unify` uses `walk`, `ext-s-check`, and all these other things. I think the first thing to do is probably `walk`, which is an important operator in the system. We'll define `walko`.
+
+It takes some term `u` and a substitution `S`. And now it's going to give us back a walked term `u^`. We have a `cond`, so that can turn into a `conde`. We have this `else`. `else`s are problems.
+
+Also, we're playing some games with Scheme's `cond` using this arrow `=>` notation. Syntactically, what this means is that this whole expression `(and (var? u) (assq u S)) ` is in the test position for this `cond` clause. If this test returns a value other than `#f` (that is, any "true" value in Scheme), then that true value gets passed to the function that's created on the right hand side of this arrow. If the `and` expression returned, say, 42, then this function `(lambda (pr) (walk (rhs pr) S))` would be passed 42, bound to the `pr` argument. This `=>` is a shorthand, Schemely way of doing things. We don't have to do it that way. I'm going to rewrite this code in a slightly less complicated style that will be easier to translate.
+
+```scheme
+(define walk
+  (lambda (u S)
+    (let ((pr (and (var? u) (assq u S))))
+      (cond
+        (pr (walk (rhs pr) S))
+        (else u)))))
+```
+
+Okay. If `pr` isn't false, then we're going to walk it. Claire, does that transformation look right to you?
+
+**Claire:** Yes.
+
+**Will:** I should really test all this stuff and be careful. But in the interest of time I'll keep things going.
+
+So let's translate this simpler program instead. Notice I got rid of the `lambda` and the `=>` stuff. We don't want `lambda`s floating around in our programs. It's okay to have a `lambda` right after `define`, but if you just have higher-order functions floating around, that's not going to work well in miniKanren. Unification doesn't know about procedures--you can't unify procedures.
+
+Now we have this `let` version, but we still have `var?` and this `assq` thing. `assq` is fine, it shouldn't be too hard. We're going to have to come up with a reasonable representation of variables, though. Tagged lists are probably the easiest thing to do. Should we just go ahead and do that? Yeah. We'll need to be able to create variables and emulate `var?`.
+
+A variable is just a vector in simple-miniKanren. We need to be able to create variables that are distinct from each other. So I think what we'll do here is define a `var` constructor that takes an `x` and returns a tagged list. We can keep the name in.
+
+```scheme
+(define var
+  (lambda (x)
+    `(var ,x)))
+```
+
+This will allow us to create different vars. Austin, this is an example of where you might want nominal logic. If you were doing this with nominal logic programming, we could represent the vars as noms (or atoms) in alphaProlog, which are implicitly tagged. And we could use the "fresh nom" operator to make sure that we're getting back unique variables (instead of having to worry about feeding in different values of `x` to make unify differently). I'll start out doing this `var` constructor approach, but this is something that arguably could be cleaned up itno something nice and nominal and could be made simpler. But nominal logic introduces some issues with reification and interpreting answers which could be a little triciker to understand.
+
+[Reading chat] Yes, if only I had cKanren installed! Then I could mix and match. Claire is going to solve all your problems by next week.
+
+So that's `var`, which just creates a tagged data structure. When we think about unification, if you create two vars (using numbers as indices) `(var 5)` and `(var 5)`, then those variables would unify. But `(var 5)` and `(var 'x)` would not.
+
+So we can construct variables that are the same, variables that are different, variables that will unify, and variables that won't. That's really all we need for vars. As far as making sure we can construct new vars, we could do something like pass through a counter saying what the current variable is. We could even do something like make the counter a Peano numeral, like the symbol `'z` or a list of `s`s, successors of `'z`. We could make those unique and increment as needed. We could use Oleg's arithmetic. There are games we could paly, but right now we won't worry about it.
+
+So we have the `var` constructor. Let's do `var?o`. A term is a variable if it unifies to something that looks like a var.
+
+```scheme
+(define var?o
+  (lambda (t)
+    (fresh (x)
+      (== `(var ,x) t))))
+```
+
+This is actually a goal, whereas `var` is a Scheme function [a term constructor] which is not very interesting. We could make it into a goal if we wanted to, but that seems kinda overkill to me. But `var?o` we want to actually make a goal which tries unifying to a tagged list.
+
+If we added a second, "output" argument to `var?o`, we would have to have some form of negation [to ensure nonoverlapping `conde` clauses]. We would have to ensure this is not a pair, or not a list of length 2, or if it is a list, its first element is not equal to the `'var` tag. But we don't really need to do this. The idea of returning a `#t` or `#f` isn't very miniKanren-y. Oleg certainly would object to this. In Oleg's mind, if you had somethign that's a predicate in Scheme that returns true or false, the correct way to encode that is as a goal that either succeeds or fails. If it succeeds, then you continue the computation. If it fails, then you just cut off that branch of the computation. So we'll encode it according to the way Oleg likes to do things, which I think has benefits. It definitely has benifits in terms of simplicity, so we'll just do it that way.
+
+So we have `var?o` and the ability to create vars, but we need to be able to look things up, which is what this `assq` does. So `assqo` shouldn't be hard to write. It's like as `assoc` type thing. It's `assq` instead of `assoc` (which is the `equal?` version) is for two reasons. One, it could be more efficient. But the real reason is because we're using vectors and pointer equality in Scheme. We actually *need* to use `assq` instead of `assoc` for two different vectors that were constructed at different times but happen to have the same symbol inside of them. They would look the same, so we would mistake two variables that we want to make different. Since for us we're not using pointer equality, we can just define `assoco`.
+
+`assoco` is like something out of the Reasoned Schemer. It's pretty easy.
+
+[1:10:20](https://youtu.be/VSpq3qK9L88?t=4220)
+
