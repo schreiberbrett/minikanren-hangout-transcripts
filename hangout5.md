@@ -448,9 +448,174 @@ This is actually a goal, whereas `var` is a Scheme function [a term constructor]
 
 If we added a second, "output" argument to `var?o`, we would have to have some form of negation [to ensure nonoverlapping `conde` clauses]. We would have to ensure this is not a pair, or not a list of length 2, or if it is a list, its first element is not equal to the `'var` tag. But we don't really need to do this. The idea of returning a `#t` or `#f` isn't very miniKanren-y. Oleg certainly would object to this. In Oleg's mind, if you had somethign that's a predicate in Scheme that returns true or false, the correct way to encode that is as a goal that either succeeds or fails. If it succeeds, then you continue the computation. If it fails, then you just cut off that branch of the computation. So we'll encode it according to the way Oleg likes to do things, which I think has benefits. It definitely has benifits in terms of simplicity, so we'll just do it that way.
 
-So we have `var?o` and the ability to create vars, but we need to be able to look things up, which is what this `assq` does. So `assqo` shouldn't be hard to write. It's like as `assoc` type thing. It's `assq` instead of `assoc` (which is the `equal?` version) is for two reasons. One, it could be more efficient. But the real reason is because we're using vectors and pointer equality in Scheme. We actually *need* to use `assq` instead of `assoc` for two different vectors that were constructed at different times but happen to have the same symbol inside of them. They would look the same, so we would mistake two variables that we want to make different. Since for us we're not using pointer equality, we can just define `assoco`.
+So we have `var?o` and the ability to create vars, but we need to be able to look things up, which is what this `assq` does. So `assqo` shouldn't be hard to write. It's like as `assoc` type thing. It's `assq` instead of `assoc` (which is the `equal?` version) is for two reasons. One, it could be more efficient. But the real reason is because we're using vectors and pointer equality in Scheme. We actually *need* to use `assq` instead of `assoc` for two different vectors that were constructed at different times but happen to have the same symbol inside of them. They would look the same, so we would mistake two variables that we want to make different. Since we're not using pointer equality, we can just define `assoco`.
 
-`assoco` is like something out of the Reasoned Schemer. It's pretty easy.
+`assoco` is like something out of the Reasoned Schemer. It's pretty easy warm-up relation. 
 
 [1:10:20](https://youtu.be/VSpq3qK9L88?t=4220)
+
+We basically want to look up a variable `x` in a substitution `S` and get back some output term bound to `x` called `t`. If the substitution is empty `'()` (remembering that the substitution is just an association list), then we will fail.
+
+```scheme
+(define assoco
+  (lambda (x S t)
+    (conde
+      [(== S '()) fail]
+      [])))
+```
+
+There's no reason to include this clause because it's failing; we don't need to have a `fail` goal. What we *really* want to to is unify `S` with an association list that *might* contain `x`.
+
+What we'll do is pattern match outside the `conde` for shorter code. This is standard miniKanren, matching on an association list.
+
+```scheme
+(define assoco
+  (lambda (x S t)
+    (fresh (y t^ rest)
+      (== `((,y . ,t^) . ,rest) S)
+      (conde
+        []
+        []))))
+```
+
+ We're saying that `y` is bound to some term `t^` at the beginning of the substitution, and we have the `rest` of the substitution.
+
+```scheme
+(define assoco
+  (lambda (x S t)
+    (fresh (y t^ rest)
+      (== `((,y . ,t^) . ,rest) S)
+      (conde
+        [(== y x) (== t^ t)]
+        []))))
+```
+
+If `y` and `x` happen to be the same, then we know that `t^` and `t` are the same; we found the term we're looking up.
+
+```scheme
+(define assoco
+  (lambda (x S t)
+    (fresh (y t^ rest)
+      (== `((,y . ,t^) . ,rest) S)
+      (conde
+        [(== y x) (== t^ t)]
+        [(=/= y x) (assoco x rest t)]))))
+```
+
+If however `y` and `x` are different, then we need to recur down the `cdr` of association list, `rest`, using the same `x` and still finding the same `t`.
+
+That should be it. Any questions about what I've done so far?
+
+**Nathan:** I'm wondering why we need the regular Scheme `var` constructor. Why can't we get away with a single predicate that both checks for var-ness but also provides a var? Could the predicate return the label as its "truthiness" and also be a predicate that creates vars?
+
+**Will:** That's a good question. That's a stylistic thing. Let's do it that way. Instead of making `var?o`, let's just call this `varo`.
+
+```scheme
+(define varo
+  (lambda (t)
+    (fresh (x)
+      (== `(var ,x) t))))
+```
+
+Now what this does is ensure that `t` is a var. It will both instantiate `t` to a var if it's fresh, and if `t` is already a var it will succeed. If `t` is not a var (or cannot be unified with a var) it will fail. This is purely a stylistic thing. You could definitely make it work either way. It depends on whetehr you want more Scheme-ly constructors.
+
+It's sorta like when you transform a program into continuation passing style (CPS): any function that could go into an infinite loop, you have to CPS it (create the continuations and pass things around). However, if you have a simple function in Scheme, like a data constructor, that you know terminates and just returns a data structure and does no more work, then you don't have to CPS it. But you could still CPS it if you wanted to.
+
+This is very reminiscent of that situation. Sometimes when you have very simple data structure, like doing some `cons`es, you can just do the `cons`es in Scheme, or you could treat it like a goal. That's more of a stylistic thing. From a performance standpoint you should just do the `cons` in Scheme and not do any unifications. From a simplicity standpoint, you could argue that it's better just to have one goal that does everything. That's the tradeoff as far as I see it. It certainly works either way so it doesn't really matter. That's a good question.
+
+**Claire:** You're going to need to pass in a name to `varo`, or else all vars could unify with each other.
+
+**Will:** Oh, good point! Maybe there is an isuue. Let's go back and look. Maybe we could salvage it.
+
+We would have to do something more like this:
+
+```scheme
+(define varo
+  (lambda (t x)
+      (== `(var ,x) t)))
+```
+
+We could leave the `x` fresh if `t` is already a var. Now `varo` is enforcing (or checking) that we have a *specific* var, not just a var in general. This actually is a little different. Claire brought up a good point. Does that difference make sense Nathan?
+
+**Nathan:** Yes. It's a slightly different predicate.
+
+**Will:** I don't know that we always want to be passing in an `x`. It may be better to go back to the previous approach.
+
+**Nathan:** So in this one here, the label would be a kind of "witness" to the var-ness?
+
+**Will:** Yes, exactly. It would let you check if something is a particular var, also, not just a var in general. I don't know if we need that ability. We could try it. Whenever we do these sorts of translations, I try out different approaches. I feel that this interface is a little simpler. I could be wrong.
+
+Now I think we're ready to translate `walk` into `walko`. Since `walk` has a `let`, the simplest thing to do is introduce `pr` as a fresh variable and then unify it with something.
+
+```scheme
+(define walko
+  (lambda (u S u^)
+    (fresh (pr)
+      (== pr ))
+
+    (let ((pr (and (var? u) (assq u S))))
+      (cond
+        (pr (walk (rhs pr) S))
+        (else u)))))
+```
+
+Well, hm. Maybe that's not really what we want to do. We want to see if it's a var first, *and then* look it up. Here, let's think about what the intent of the code is: we're trying to do a variable lookup in the substitution. The reason we have the `and` is that we only want to look somethnig up if it's a variable. If it's not a variable, then we just want to return it. I think we want a conjunction here.
+
+We want to see if `u` is a variable or not and then tread it differently. What I really want to do, probably, is something like this:
+
+```scheme
+(define walko
+  (lambda (u S u^)
+    (conde
+      [(var?o u) ]
+      [else (== u^ u)])))
+```
+
+If `u` is a variable, we want to do something. If `u` is *not* a variable (here's the `else`) now it gets interesting. We want `u^` to be `u`--we basically want to leave it unchanged if there's nothing to look up. Of course, this `else` could be an issue. We need to figure out how to deal with this because we can't have `else` in `conde`. We'll try to get rid of that `else` in a bit. We sort of want to have a `not-var?o`, the negation of `var?o`. We'll hold off on that for a second.
+
+If something *is* a var, then we want to look it up. We want to use our friend `assoco`. In particular, we want to look up `u` in `S` and get some term `t`, let's say.
+
+```scheme
+(define walko
+  (lambda (u S u^)
+    (conde
+      [(var?o u)
+       (fresh (t)
+         (assoco u S t))]
+      [else (== u^ u)])))
+```
+
+In that case, we want to walk the right hand side of `t`. `assoco` is supposed to give us a pair... Oh right! I messed this up. This is actually not `assoco`; it's more like a variable lookup. The difference is that when you're looking up in an association list with `assq`, the thing you return is not the right hand side; you actually return the entire pair. Well, we could just return the right-hand side in the lookup function itself. I'm going to call it `lookupo`.
+
+```scheme
+(define lookupo
+  (lambda (x S t)
+    (fresh (y t^ rest)
+      (== `((,y . ,t^) . ,rest) S)
+      (conde
+        [(== y x) (== `(,y . ,t^) pr)]
+        [(=/= y x) (lookupo x rest t)]))))
+```
+
+There's no reason to return the whole pair, `assq` is just something Scheme happened to have built in. We used it to make the code a little shorter in the miniKanren implementation, but it wasn't really necessary.
+
+Now Claire is saying that this version would have worked even as `assqo`. Why was that, Claire?
+
+**Claire:** The reason `assq` in Scheme returns the entire pair is because if you have a `#f` on the right hand side of an association, there's no way to distinguish "I found it and it's associated to `#f`" from "I didn't find it and I'll return `#f`". But there's no "failure value" in miniKanren that could be stored on the right hand side in an association list; miniKanren will just fail if it didn't find it rather than returning `#f`. It won't be a problem if you just return the right hand side.
+
+**Will:** That's right. We don't have a base case for `lookupo` because we don`t ever get to the empty list.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
