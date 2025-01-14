@@ -603,18 +603,73 @@ Now Claire is saying that this version would have worked even as `assqo`. Why wa
 
 **Claire:** The reason `assq` in Scheme returns the entire pair is because if you have a `#f` on the right hand side of an association, there's no way to distinguish "I found it and it's associated to `#f`" from "I didn't find it and I'll return `#f`". But there's no "failure value" in miniKanren that could be stored on the right hand side in an association list; miniKanren will just fail if it didn't find it rather than returning `#f`. It won't be a problem if you just return the right hand side.
 
-**Will:** That's right. We don't have a base case for `lookupo` because we don`t ever get to the empty list.
+**Will:** That's right. We don't have a base case for `lookupo` because we never get to the empty list. We have a difference in how we're dealing with the failure to look something up if it's not found in the environment. That's what we have to think about.
 
+In fact, we need to think about that carefully. Let's think about this. If we're looking up a some term `u` in the substitution `S` to get `t`, it will only succeed if `u` is actually in `S`. If not, this whole `conde` clause `[(var?o u) (lookupo u S t)]` is just gonna fail, so we might get this `[else (== u^ u)]` clause instead. Once again, we run into issues of encoding negation: what happens when `lookupo` fails. We're going to have to think about it a little bit. I think it'll be the tricikest part of translating `walk`.
 
+We know `u` is a variable, we look up `u` in `S`, we get back some term `t`, and then we have to walk the right hand side of the pair (which is just `t` in the miniKanren version) in `S`, and that's our answer. Basically, we have to call `walko` again, recursively. Now we're walking `t` in `S` and the value we get back is `u^`. 
 
+```scheme
+(define walko
+  (lambda (u S u^)
+    (conde
+      [(var?o u)
+       (fresh (t)
+         (lookupo u S t)
+         (walko t S u^))]
+      [else (== u^ u)])))
+```
 
+That's fine. If this whole thing fails, (if it ins't true) then the output should be unchanged, the same as the input term: `(== u u^)`. We have to think about what that negation means.
 
+First of all, if `u` isn't a variable then we just want to leave it unchanged. Maybe `u` is 5; we're looking 5 up. We know 5 isn't going to be bound in the substitution because 5 isn't even a variable, so we just return it. If `u` is not a variable then we want to leave it unchanged. And also, if `u` is a variable and is not in the substitution, then we want to leave it unchanged. So we have to be able to encode these two pieces of negative information.
 
+Does anyone have any thoughts about how we should encode that? This is the interesting, trickier part if we want to keep everything relational. We could obviously encode this using `conda` or `condu`, which would be equivalent to using a cut in Prolog. Any thoughts about how to encode this?
 
+Let's do one thing at a time. How could we encode `u` not being a variable? Could we write a goal that ensures `u` isn't a variable? What would that look like?
 
+**Nathan:** Could we explicitly tag our literals? So that we'd have a tag for logic variables and a tag for literals. Then we could dispatch on the tag, or look up the tag of a term.
 
+**Will:** We definitely could do something like that (`5` is a literal, `'foo` is a literal, that sort of thing) and just tag everything. We could also tag by type, like an `'int` tag.
 
+We have to decide what we have in our language, too. We could have numbers using the `numbero` constraint in miniKanren. `numbero` is a constraint we use in the miniKanren for quine generation--we can tell if something is a Scheme number. We could do something like restrict our language of terms (that we're unifying over) just to numbers and variables. Although we probably want to have lists, because unification isn't interesting unless you have pairs of terms.
 
+So we might want to have Scheme numbers, pairs, and these tagged variables. I think that's sufficient to do interesting things. Let's say those are our three types of things. Everything is either a variable, a pair (which is not a tagged variable), or a Scheme number. Those are our three types of terms. Oh yeah, we'll probably want to have the empty list also. In fact, let's add a comment here.
+
+```scheme
+;; terms in our language
+;; 1. Scheme numbers: 5, 137, etc.
+;; 2. tagged variables: `(var ,x) for some x
+;; 3. (non-tagged variable) pairs: (5 . 6), (() . (5 . ()))
+;; 4. empty list: ()
+```
+
+So we'll have 4 values in our language. `not-var?o` will have to distinguish between variables and non-variables.
+
+We need a `conde` here because we have multiple cases. If `t` is not a variable, then we have 3 cases.
+
+```scheme
+(define not-var?o
+  (lambda (t)
+    (conde
+      [(== '() t)]
+      [(numbero t)]
+      [(fresh (a d)
+         (== `(,a . ,d) t)
+         (=/= 'var a))])))
+```
+
+If `t` is the empty list, then it's not a var. Or if `t` is a number (we have a special `numbero` constraint in miniKanren). And the other case is if `t` is a pair (and furthermore, the `car` of that pair had better not be the `'var` tag).
+
+We have to be kinda careful of this `'var` tag thing, especially running backwards. Really, we probably want to treat var as some special gensym, some special reserved thing you can't type in. Nominal logic can help with that.
+
+Actually this is a place we could use the `absento` constraint `(absento 'var a)`, that something doesn't occur in something else--No, actually! we want to be careful here, because pairs can actually contain tagged vars.
+
+So that's `not-var?o`. Notice that the negative version is a lot more complicated than `var?o`. That is not atypical. If we tag all the other terms, we could make it a little simpler. But tagging the empty list, for example, seems overkill to me.
+
+So that's one part of the negation. We can use it in our definition of `walko`.
+
+[1:33:13](https://youtu.be/VSpq3qK9L88?t=5593)
 
 
 
