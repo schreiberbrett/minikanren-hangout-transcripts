@@ -9,15 +9,15 @@ Austin, did you want to recap the things you were thinking about when working on
 
 **Will:** This reminds me of something Dan was talking about the other day that we may not have made explicit, but which is always in our minds (mine, Dan's and Oleg's). When we write these programs, we always want the relations to work in what a Prolog programmer would call "all modes". That is, you can allow all of the variables passed into a relation to be fresh logic variables and the relation should still work just fine. That's the gold standard. Everything being fresh should work. You should be able to do a `run 10` with all fresh variables fed into your relation, and that should mean something. You might have the situation where there are finitely many answers (say, only 6) and when you do a `run 10` your program could go into an infinite loop, because it can't find the 7th (nonexistent) answer. But if you do a `run 6` it should work just fine. This idea that you should be able to *always* feed in *all* fresh variables to *all* of your goals is really the standard we want.
 
-There may be some times where for a particular goal you want to restrict it a little bit, like if you have a little bit of [mode] information you want to take advantage of. In those cases you might want to use a `conda`/`condu` which is equivalent to Prolog's cut `!/0`, or you might want to use some additional miniKanren operators like `project`. But that's getting away from the relational paradigm. I see that as an optimization (or compromise you might have to make) if you can't write it directly in the relational style. But most of the time, you can get away with writing everything to support all fresh variables. I always think of the goals as being runnable on fresh variables.
+There may be some times where for a particular goal you want to restrict it a little bit, like if you have a little bit of \[mode\] information you want to take advantage of. In those cases you might want to use a `conda`/`condu` which is equivalent to Prolog's cut `!/0`, or you might want to use some additional miniKanren operators like `project`. But that's getting away from the relational paradigm. I see that as an optimization (or compromise you might have to make) if you can't write it directly in the relational style. But most of the time, you can get away with writing everything to support all fresh variables. I always think of the goals as being runnable on fresh variables.
 
-In fact, if I write a complex relation, often I don't know how to test it [on ground terms]. xIf you are doing something like an interpreter and you have a complicated term that you want to feed in (or you have a special representation of environments) and you get one of those terms wrong syntactically, then your program will just fail or diverge. So what I normally do is just a `run 10` will all fresh variables and look at the answers that come out, making sure they have the right shape. Also, that gives me some test data I can feed in: if I know running with all arguments fresh gives me a ground term, then I can stick that in and leave everything else fresh and see answers I can generate. So it's also helpful for testing miniKanren programs.
+In fact, if I write a complex relation, often I don't know how to test it \[on ground terms\]. If you are writing something like an interpreter and you have a complicated term that you want to feed in (or you have a special representation of environments) and you get one of those terms wrong syntactically, then your program will just fail or diverge. So what I normally do is just a `run 10` will all fresh variables and look at the answers that come out, making sure they have the right shape. Also, that gives me some test data I can feed in: if I know running with all arguments fresh gives me a ground term, then I can stick that in and leave everything else fresh and see answers I can generate. So it's also helpful for testing miniKanren programs.
 
 Okay, so today is "stump the chump day". I'm the chump. The "stump the chump" game works like this: you find a piece of purely functional Scheme code (obviously not 300 pages worth, but something relatively short and self-contained). If no one here can present it, I can try to find something online. I'm trying to translate code I haven't seen before from pure Scheme (no side effects, no `set!`, no `call/cc`) into miniKanren and have it run backwards. I'll go through that whole process and try to explain what I'm thinking about the whole time. If people have any questions, I'd be happy to answer. It's a kind of "thinking aloud" exercise. Maybe we'll run into problems, maybe we won't. We might see opportunities to use constraints or nominal logic programming, etc. This is just to try to give people a chance to see what an experienced miniKanren programmer thinks about when going through this process.
 
 Before we get into that, does anyone have any general questions or things to share? Claire, I know you've been really busy with some miniKanren related things. Did you want to say a few words about what you're working on and their status?
 
-**Claire:** Sure. Last week I implemented a macro in Scheme that will let you define a lazy goal, which basically waits until the end to evaluate the goal. This actually lets you define different searches through the search space, so this kinda solves this problem: if you put the recursive call first [and unifications later] and it'll diverge because it doesn't have all the information when it goes depth-first into that recursive call. Now [with lazy goals] you can have it wait until all the unifications have happened before it tries to evaluate that goal. That's implemented in cKanren now. You can decide what kind of search strategy you want, which goals can be lazy, and switch between depth-first search, bread-first search (through all the lazy goals), and some weird hybrid search that mixes bread-first and depth-first. I've been getting that to work this week.
+**Claire:** Sure. Last week I implemented a macro in Scheme that will let you define a lazy goal, which basically waits until the end to evaluate the goal. This actually lets you define different searches through the search space, so this kinda solves this problem: if you put the recursive call first \[and unifications later\] and it'll diverge because it doesn't have all the information when it goes depth-first into that recursive call. Now \[with lazy goals\] you can have it wait until all the unifications have happened before it tries to evaluate that goal. That's implemented in cKanren now. You can decide what kind of search strategy you want, which goals can be lazy, and switch between depth-first search, bread-first search (through all the lazy goals), and some weird hybrid search that mixes bread-first and depth-first. I've been getting that to work this week.
 
 **Will:** That's really cool stuff. You were saying before that you might be able to do this per goal: having different search strategies in the same program, right?
 
@@ -33,7 +33,7 @@ There was one more cool thing about CHR but now I forget.
 
 **Will:** Did you talk about how making recursion lazy partially solves the problem of "commutative and"? Unification would be the only non-lazy goal, right?
 
-**Claire:** Yes. If you do it right and make all your [potentially nonterminating] recursive calls lazy, you can really write your goals in whatever order you want, which is awesome. It doesn't work so well when you have, like, 5 or more recursive calls. In the case of quines, I think there's a case of 3 recursive calls in that evaluator. *That* doesn't work so well because if you give all 3 of those a fair chance to evaluate, you well get an explosion in the number of `conde`s, and I'm pretty sure that's what slows it down a lot. Using depth-first search is the fastest way of doing that, but it's not as fast as the original code yet. There are a lot of dispatches that have to happen (which wouldn't if you were evaluating things [strictly] as soon as you encounter them).
+**Claire:** Yes. If you do it right and make all your \[potentially nonterminating\] recursive calls lazy, you can really write your goals in whatever order you want, which is awesome. It doesn't work so well when you have, like, 5 or more recursive calls. In the case of quines, I think there's a case of 3 recursive calls in that evaluator. *That* doesn't work so well because if you give all 3 of those a fair chance to evaluate, you well get an explosion in the number of `conde`s, and I'm pretty sure that's what slows it down a lot. Using depth-first search is the fastest way of doing that, but it's not as fast as the original code yet. There are a lot of dispatches that have to happen (which wouldn't if you were evaluating things \[strictly\] as soon as you encounter them).
 
 **Will:** Cool stuff. Claire is working on four major things.
 
@@ -51,13 +51,13 @@ I thought there were four things. You ported all the stuff to Racket. You've bee
 
 **Will:** Attributed variables, constraint handling rules...
 
-**Claire:** General [generic] unification!
+**Claire:** General \[generic\] unification!
 
 **Will:** General unification, and lazy recursion (which helps to solve commutative conjunction). That's like 6 things.
 
 **Claire:** Oh, and now the constraint store is a hash table so it goes faster.
 
-**Will:** Alright, sever things. Cool. I look forward to seeing the polished version of all those things, the sets and all that. That's really going to make miniKanren much more powerful and useful. Oh yeah, documentation! That counts too. Those things will make miniKanren much better. Nathan, is there anything on your mind?
+**Will:** Alright, seven things. Cool. I look forward to seeing the polished version of all those things, the sets and all that. That's really going to make miniKanren much more powerful and useful. Oh yeah, documentation! That counts too. Those things will make miniKanren much better. Nathan, is there anything on your mind?
 
 **Nathan:** I've been spending time trying to parse the difference between CHR and the new constraint handling stuff and where term rewriting fits in. I'm interested to see where this goes. I ended up getting myself really confused because a "constraint" in CHR is more like a fact in Kanren, as far as I can tell. But there is some overlap in different ways. They're more high level and at the same time low level than Kanren in some ways. I got myself confused on what it would mean and what term rewriting would look like in a system that can go forwards and backwards, if that makes sense. When a rule fires in CHR it's super forward-chained and will never go back: would it make sense to have term rewriting in Kanren in the first place? That's kind of what I was doing some reading about and trying to wrap my head around, but I was getting confused by the whole thing.
 
@@ -67,7 +67,7 @@ I thought there were four things. You ported all the stuff to Racket. You've bee
 
 **Claire:** Yes.
 
-**Nathan:** That removal itself wouldn't "undo" [from running backwards], right? That's sorta outside the search, right?
+**Nathan:** That removal itself wouldn't "undo" \[from running backwards\], right? That's sorta outside the search, right?
 
 **Claire:** All of these are still functional data structures, so that won't affect backtracking in any way. The fact that you have been able to refine your constraint store in one branch is not going to affect any other.
 
@@ -81,13 +81,13 @@ I thought there were four things. You ported all the stuff to Racket. You've bee
 
 **Will:** The term rewriting also makes me think that there might be some overlap with things like [PLT Redex](https://redex.racket-lang.org/). It's sort of like that space also. The whole general area of term rewriting and executable semantics is a really cool area and really interesting.
 
-[Discussion of the IU 3d printing club's antenna is omitted].
+\[Discussion of the IU 3d printing club's antenna is omitted\].
 
-[19:35](https://youtu.be/VSpq3qK9L88&t=1175) I guess it's time to play stump the chump. Does anyone want to challenge me to translate some code into miniKanren, or must I be reduced to finding my own challenge? [From the chat:] "Write miniKanren in miniKanren." That's something I've wanted to do for a while. I don't know if I could live code that. It is true that there's a purely functional Scheme implementation of miniKanren, so I suppose that's fair game. Let me think about this.  [From the chat:] No? Okay, Claire retracts the challenge.
+[19:35](https://youtu.be/VSpq3qK9L88&t=1175) I guess it's time to play stump the chump. Does anyone want to challenge me to translate some code into miniKanren, or must I be reduced to finding my own challenge? \[From the chat:\] "Write miniKanren in miniKanren." That's something I've wanted to do for a while. I don't know if I could live code that. It is true that there's a purely functional Scheme implementation of miniKanren, so I suppose that's fair game. Let me think about this. \[Will reads the chat.\] No? Okay, Claire retracts the challenge.
 
 Zippers and tree rewriting? Maybe. What works well for this game is a fairly small amount of self-contained, purely functional code--that's something we could translate. It doesn't have to be Scheme. It could be mathematical rules or something like that. Things in Matt Might's blog posts have been pretty good.
 
-[Reading chat:] Anything that uses nominal logic. Okay. Things like interpreters, type inferencers, and other things which involve lexical scope are good candidates for nominal logic.
+\[Reading chat:\] "Anything that uses nominal logic." Okay. Things like interpreters, type inferencers, and other things which involve lexical scope are good candidates for nominal logic.
 
 I could try doing miniKanren-in-miniKanren. I don't know. I was thinking about making some kind of metainterpreter for miniKanren, but I guess we could just try implementing the Scheme version, but that's a little longer. I don't know how long it would take; I don't know if we could do it all. I'm trying to do something where I can do the whole translation in one sitting and show you. But I'm tempted to try that, but it would be pushing it time-wise.
 
@@ -113,7 +113,7 @@ If you do something like `(membero x ls)`, it'll give you one member at a time. 
 
 To me, anything "relational" means you can swap the goal ordering and the semantics don't change. At least with `setof/3` and `bagof/3`, the answers you get back/accumulate depend on the groundness of the terms. The order in which you make those calls can change the answer you get. I don't know of a way to make those relational. It's sorta like the `copy_term/2` problem I described in an earlier hangout: depending on the position of `copy_term/2` in the program, the answer you get back can be different. It turns out for `copy_term/2` there are some times where you can use tricks like special forms of tagging plus nominal unification to make a safe version of `copy_term/2`. In our alphaLeanTAP paper, we're only going in one direction but we can still use it safely and relationally. There might be restricted uses of `findall/3`, `copy_term/2`, `setof/3`, and `bagof/3`, but I think the general versions of those operators are non-relational: swapping them around can change the semantics of your program.
 
-**Austin:** The context that is coming up for me is finite failure. I need to show that all possible extensions would fail. I've been trying to understand how you might do that without `findall/3`. I'm not sure if you can do it at the user-level of miniKanren or if a different goal constructor can tune this part of the search. It also relates to what you said about `membero`: oftentimes I want to be able to say that `x` is a member of a list [without instantiating its position in] the entire list. I want the next operation to be able to work with the list, but I want to lazily search each branch to find all the elements of that list.
+**Austin:** The context that is coming up for me is finite failure. I need to show that all possible extensions would fail. I've been trying to understand how you might do that without `findall/3`. I'm not sure if you can do it at the user-level of miniKanren or if a different goal constructor can tune this part of the search. It also relates to what you said about `membero`: oftentimes I want to be able to say that `x` is a member of a list \[without instantiating its position in\] the entire list. I want the next operation to be able to work with the list, but I want to lazily search each branch to find all the elements of that list.
 
 **Will:** Encoding negation is generally just tricky. It sounds like you want to do a universal quantification to show the set is empty, that kind of thing. There are probably ways to encode this in miniKanren without using these operators, but it might be kinda tricky. It's on a case-by-case basis. It's gets very tricky with negation in general. We don't like using negation as failure because that means using `conda`, `condu`, or that kind of thing. Negation is the nasty beast of logic programming. That's why [answer set programming](https://en.wikipedia.org/wiki/Answer_set_programming) is taking off: it's probably the best story (yet) about how to do negation in logic programming, but that's for things that are finite.
 
@@ -129,7 +129,7 @@ I think `setof/3` and `bagof/3` are actually quite easy to implement in miniKanr
 
 **Austin:** So you're not interested in miniKanren having this meta layer of extralogical goals or anything like that as part of the system?
 
-**Will:** I'm pretty sure you can encode those things right now. We *do* have some extralogical operators: `conda`, `condu`, and `project`. Just those three things alone are actually really powerful: you can encode some pretty crazy stsuff with that. I don't have any problem with it existing, it may be worth implementing, and I think core.logic *should* have all that stuff. I think it's easy to encode all those things just on top of miniKanren right now: you can always get your hands on the substitution if you write a low-level goal.
+**Will:** I'm pretty sure you can encode those things right now. We *do* have some extralogical operators: `conda`, `condu`, and `project`. Just those three things alone are actually really powerful: you can encode some pretty crazy stsuff with them. I don't have any problem with it existing, it may be worth implementing, and I think core.logic *should* have all that stuff. I think it's easy to encode all those things just on top of miniKanren right now: you can always get your hands on the substitution if you write a low-level goal.
 
 Personally, my main interest is not having to write those. My main interest is how to write interesting programs that do the same work without having to resort to extralogical operatiors. The extralogical operators, to some extent, destroy the declarativeness. That may require ingenuity or new constraints. Instead of having a dirty operator which works in general but inhibits your ability to run backwards, the approach I'm more interested in is special constraints for particular cases, or using a very limited form of negation to encode the properties you want. It's harder and it probably requires more ingenuity, but my main concern is being able to run backwards.
 
@@ -671,6 +671,264 @@ So that's one part of the negation. We can use it in our definition of `walko`.
 
 [1:33:13](https://youtu.be/VSpq3qK9L88?t=5593)
 
+If `u` is not a var, then leave it as-is.
 
+```scheme
+(define walko
+  (lambda (u S u^)
+    (conde
+      [(var?o u)
+       (fresh (t)
+         (lookupo u S t)
+         (walko t S u^))]
+      [(not-var?o u) (== u^ u)]
+      [(var?o u)
+       ??? lookupo failed
+       (== u^ u)])))
+```
 
+Now we want to express that we have a var, but lookup failed; that it wasn't in the substitution at all. Any ideas how we might encode that?
 
+**Nathan:** Use a sentinel value.
+
+**Will:** What would the sentinel value look like Nathan? Is there more of an idea of how to use that?
+
+**Nathan:** Something like `'not-here`. I guess that would be a new term we'd have to worry about handling. I guess we'd only have to handle it in this one goal. You'd be returning boxed values, `\`(here ,value)` and `(not-here)`.
+
+**Will:** Oh, I see! This would be instead of having `lookupo` fail?
+
+**Nathan:** Yes.
+
+**Will:** Gotcha. Yeah, we could change `lookupo`. Maybe that's the easiest thing to do. There are a couple ways to do this (I can think of at least three). But let's do it this way. We can add a special case for when `S` is the empty list. When `S` is empty, we can return `#f`. If we're going to do this, we'll have to go back to that game where we're returning the full pair. That's actually more like the original Scheme code. We can do it that way. Let's return the entire pair and take the right hand side of it.
+
+```
+(define lookupo
+  (lambda (x S t)
+    (conde
+      [(== '() S) (== #f t)]
+      [(fresh (y t^ rest)
+         (== `((,y . ,t^) . ,rest) S)
+         (conde
+           [(== y x) (== `(,y . ,t^) t)]
+           [(=/= y x) (lookupo x rest t)]))])))
+```
+
+Claire says that's gross [in the chat}. Claire, do you have a better suggestion? I actually have an idea.
+
+**Claire:** Can't you just do a `not-ino`?
+
+**Will:** Ah, like an `absento` constraint?
+
+**Claire:** Not exactly, because it would only not be in the `car`. It should still be able to appear in the right hand side of the association.
+
+**Will:** This is like the trick I used in the relational CESK machine where I split up the environment into two lists: a list of variables and a list of terms they are bound to. It makes the representation of the environments a little more complicated, but maybe that's worth showing because it's kinda cool. So then we can use the `absento` constraint.
+
+We can do it the Scheme way (more like the original code where we return a `#f` value if the environment is empty. Or we can do it in this other manner which is just kinda cool. 
+
+I've never seen this split environment approach before. Probably someone invented it in Prolog 30 years ago. The idea is this: Normally our substitution representation is just an association list, right?
+
+```scheme
+; S: ((x . 5) (y . 6))
+```
+
+Instead, we're going to come up with another representation where the same information can be represented like this:
+
+```scheme
+; S ((x y) (5 6))
+```
+
+You match up the `x` and `5` by position. You end up `cdr`-ing down both lists at the same time. Why is that helpful? It's helpful because then you can use a constraint on the variable list. There's an `absento` constraint (similar to the # (`hash`) constraint in nominal logic) saying that the variable doesn't appear within the term at all. (In nominal logic, `hash` means the variable doesn't occur free within the term).
+
+For example, if we wanted to make sure that `z` doesn't appear in the substitution `((x y) (5 6))`, we could just have this absento constraint saying that `z` doesn`t appear in the first list. If `z` does appear, it would just fail. It lets us use a lazy constraint to represent this information.
+
+One of the advantages of this is that we can represent the fact that `z` doesn`t appear in an unbound substitution (a fresh logic variable) without having to instantiate the substitution an unbounded number of times. It lets us be more efficient in how we actually represent the information. I'll try that just because that's a neat representation trick. (But we could definitely do it the other way.)
+
+Our `lookupo` will have to change because the `S` looks a little different. It's slightly more complicated, but not terribly.
+
+```scheme
+(define lookupo
+  (lambda (x S t)
+    (fresh (y y-rest t^ t-rest)
+      (== `((,y . ,y-rest) (,t^ . ,t-rest)) S)
+      (conde
+        [(== y x) (== t^ t)]
+        [(=/= y x) (lookupo x `(,y-rest ,t-rest) t)]))))
+```
+
+We've got a list of variables and a list of terms. We still need to check if `x` and `y` are the same, and if so `t` is `t^`. Otherwise we're still looking up in the rest of the substitution, which we have to rebuild. Our representation is a little clumsier to work with. You can write helpers for all this if you want to abstract the representation. But it'll make it easier for us to express negation.
+
+So in `walko`, where we now want to say that looking up `u` in `S` fails, all we have to use is this `absento` constraint that says `u` does not appear in the first list in `S`. So we have to break apart `S` a little bit into the variables `y*` and the term values `t*`. We want to say that `u` is a variable, but `u` is *absent* in the list of variables in that current substitution (if that's the case lookup will fail) so we can leave it unchanged.
+
+```scheme
+(define walko
+  (lambda (u S u^)
+    (conde
+      [(var?o u)
+       (fresh (t)
+         (lookupo u S t)
+         (walko t S u^))]
+      [(not-var?o u) (== u^ u)]
+      [(fresh (y* t*)
+         (var?o u)
+         (== `(,y* ,t*) S)
+         (absento u y*)
+         (== u^ u))])))
+```
+
+That's a representation trick. It turns out when doing logic programming, representation tricks are really important. You can often get much better behavior.
+
+We should be able to run it now. Hopefully this will work. We should get 5 back.
+
+```scheme
+> (run* (q)
+    (fresh (v1 S)
+      (== (var 'x) v1)
+      (== `((,v1) (5)) S)
+      (walko v1 S q)))
+()
+```
+
+Empty! Here's a traditional debugging question. Maybe you've run into this before Austin: you write this great relational program, and you run in, and then it just gives you back the empty list. How should we debug this? Any thoughts?
+
+**Claire:** Try a simpler test case.
+
+**Will:** Yes. The simplest possible test case is to let `walko` run with all fresh variables.
+
+```scheme
+> (run 5 (q)
+    (fresh (t S t^)
+      (walko t S t^)
+      (== `(,t ,S ,t^) q)))
+()
+```
+
+That gives us back the empty list! That's a serious problem. We need to go back and look at `walko` and see what's going on there.
+
+Let's see here. You'd think at least the `not-var?o` case would succeed, because it enumerates values. I'm actually surprised by that. Let's try something simpler. Why does the `not-var?o` call not succeed?
+
+```scheme
+> (run* (q) (not-var?o q))
+()
+```
+
+Okay, that's failing too. Did I download a bum version of miniKanren? let's make sure miniKanren's working right.
+
+```scheme
+> (run* (q) (== 5 5))
+((var q))
+```
+
+Oh! I know what's going on. Do you know what the problem is, Claire?
+
+**Claire:** No.
+
+**Will:** This is so funny. Let me show you what's going on. This is hilarious.
+
+\[Will navigates to `mk.scm`\]
+```scheme
+(define var (lambda (dummy) (vector dummy)))
+```
+
+I redefined miniKanren's builtin `var`! This is the reason for namespaces and modules. I just trashed miniKanren's ability to construct new variables. Now miniKanren is constructing *my* vars instead. We have to change this. Let's call ours `make-var`.
+
+```scheme
+(define make-var (lambda (x) `(var ,x)))
+
+(define var?o
+  (lambda (t)
+    (fresh (x)
+      (== (make-var x) t))))
+```
+
+Alright. That could help explain things. because nothing was working.
+
+```scheme
+> (run* (q) (== 5 5)
+(_.0)
+> (run* (q) (== 5 q))
+(5)
+```
+
+That's better. Let's go back and try the tests.
+
+```scheme
+> (run 5 (q)
+    (fresh (t S t^)
+      (walko t S t^)
+      (== `(,t ,S ,t^) q)))
+((() _.0 ())
+ ((_.0 _.1 _.0) (num _.0))
+ (((_.0 . _.1) _.2 (_.0 . _.1)) (=/= ((_.0 var))))
+ ((var _.0) (((var _.0) . _.1) (() . _2)) ())
+ (((var _.0) (((var _.0) ._1) (_.2 . _.3)) _.2) (num _.2)))
+```
+
+Hey, that looks better! Success. Let's see if that makes sense.
+
+- `(() _.0 ())` Here we're walking the empty list, which is a legal term. The substitution is *any* substitution. So it just walks to itself, because the empty list is not a variable.
+- `((_.0 _.1 _.0) (num _.0))` Here we say if some `_.0` is a number, then in *any* substitution `_.1`, it just walks to itself.
+- `(((_.0 . _.1) _.2 (_.0 . _.1)) (=/= ((_.0 var))))` Here we have a pair. We know it's a pair and not a variable because it has this disequality on the `car`. If you have a pair in any substitution, then it walks to itself.
+- Next we have the var cases. In this first case `((var _.0) (((var _.0) . _.1) (() . _2)) ())` in the substitution we have the variable we're looking up as the first thing in the substitution bound to the empty list term `()`, so we get back the empty list.
+- In the second case `(((var _.0) (((var _.0) ._1) (_.2 . _.3)) _.2) (num _.2))` we have the variable bound to a number in the substitution and we get back that number.
+
+We could try it with `run 10` and get back more complicated answers. So that appears to work.
+
+Let's try this next example. We'll walk `(var 'x)` in this substitution where `(var 'x)` should be bound to 5 and we expect to get back 5.
+
+```scheme
+> (run* (q)
+    (fresh (v1 S)
+      (== (var 'x) v1)
+      (== `((,v1) (5)) S)
+      (walko v1 S q)))
+(()
+ (_.0 (num _.0))
+ ((_.0 . _.1) (=/= ((_.0 var))))
+ 5)
+```
+
+That answer is more complicated than I expected. What does this mean? Why are we getting four answers? How could we possibly get back these other cases?
+
+**Claire:** Will, could you see what `not-var?o` does on a var.
+
+**Will:** Yeah, maybe there's something there. We should only get back `(5)`. The other answers are bogus.
+
+```scheme
+> (run* (q) (not-var?o (var 'x)))
+(_.0 _.0 _.0)
+```
+
+Oh! 
+
+**Claire:** That seems incorrect.
+
+**Will:** It does seem incorrect.
+
+**Claire:** You're calling `var`, not `make-var`!
+
+**Will:** Right, thaht's miniKanren's `var`! my program is wrong.
+
+```scheme
+> (run* (q)
+    (fresh (v1 S)
+      (== (make-var 'x) v1)
+      (== `((,v1) (5)) S)
+      (walko v1 S q)))
+(5)
+```
+
+Yes. Alright, it seems to work. The lesson for today is that namespaces are good, modules are good, maybe even R6RS libraries are tolerable. So that actually worked just fine. We just got tripped up with a miniKanren-internal definition for `var`. Really, that shouldn't be exported if we were using the R6RS or the Racket version. Your Racket version wouldn't export `var`, right?
+
+**Claire:** Nope!
+
+**Will:** That's a software engineering mistake.
+
+**Claire:** And if you tried to redefine `var` while importing `var`, it would complain. It wouldn`t just overwrite it.
+
+**Will:** That would have been more handy. Well, I haven't gotten through all of unification, but walk is kinda the key thing in unify. The rest of unification might not be too hard to do.
+
+My challenge to anyone watching is to implement the rest of unification based on this implementation of `walko`. I'll put this online somewhere, but you should be able to recreate it pretty easily. I think you can do a unify that runs backwards now that we have a walk that runs backwards. Once we have that, I guess we can do the rest of miniKanren, maybe. I'll play around with it some. It seems like a fun exercise. Any closing thoughts Claire?
+
+**Claire:** Not especially.
+
+**Will:** Anyway, that's it for now. Now I'm going to go hack on HAM radio and 3D printing. Talk to you all later.
