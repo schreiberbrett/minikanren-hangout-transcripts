@@ -367,7 +367,7 @@ They're equal, but not pointer-equal. Does that make sense Austin?
 
 **Will:** Okay, cool. So that actually might be kinda hard to express in the miniKanren version of miniKanren. We might have to thread through a counter (or something like that) so that we can get both the `equal?` and `eq?` behavior. That something we'll have to think about.
 
-Anyway, that's the interface for 'unify`. The first question I can think of is: what would it mean to run `unify` backwards? If you were to make `unifyo` (a relation instead of a function), what would that look like? Any thoughts about that? How would this change if it's a `unifyo`?
+Anyway, that's the interface for `unify`. The first question I can think of is: what would it mean to run `unify` backwards? If you were to make `unifyo` (a relation instead of a function), what would that look like? Any thoughts about that? How would this change if it's a `unifyo`?
 
 **Austin:** The third argument would be the result.
 
