@@ -176,4 +176,219 @@ The most important thing is that it basically takes a normal miniKanren goal and
 
 [26:45](https://youtu.be/MTAhbsWUUxM?t=1605)
 
-If I were to expand this out, this `syms*.
+If I were to expand this out, `(define-lazy-goal (syms* t out) ...)` would expand to:
+
+```scheme
+(define (syms* t out)
+  (goal-construct (lazy-syms* t out)))
+
+(define (lazy-syms* t out)
+  ...)
+
+(define (enforce-syms* t out)
+  ...)
+```
+
+Basically, what happens is the actual `syms*` procedure becomes a kind of lazy constraint. All it will do is build a call to `enforce-syms*` and then put itself in the constraint store and not do any more work. As soon as you do a call such as `(syms* a a^)`, all it will do is put a lazy constraint on `a` and `a^` in the constraint store. It won't actually do any work; it'll just assert that sometime in the future, it will enforce that `syms*` call.
+
+At the end, as you can see, I have to build this little closure of calling the actual goal. I will put that in my constraint store by calling one of these functions: `update-q-dfs` (update the queue in a DFS way), `update-q-bfs` (update the queue in a BFS way), or `update-q-hybrid` (update the queue in this weird hybrid search that I discovered).
+
+I'm going to go over to how it actually adds this closure into the store.
+
+```scheme
+(define (update-q-dfs new-enforce)
+  (lambdam@ (a : s c q-old t)
+    (make-a s c (ext-q q-old new-enforce) t)))
+```
+
+All this is going to do is extend my queue by taking my old queue of goals (all the lazy goals that existed before me) and add this new closure--this new goal to run--to my queue, and then continue onwards.
+
+Basically, when we get all the way through the program, we end up with all the recursive programs we *would* have made in the constraint store. Then we have to perform `enforce-constraints`.
+
+**Jason:** Claire, two questions: One, how can you detect if a call is recursive? Two, whenever you get done with this, I'd like to hear more about your new hybrid technology.
+
+**Claire:** Hybrid is thew rong word. It's just that I made a mistake while trying to implement, and what I got out was a mix of BFS and DFS. It's nothing fancy.
+
+How do you detect if it's recursive? You don't need to detect if it's recursive, because, for example, this call to `(syms* a a^)` is just going to be a call to `(goal-construct (lazy-syms* t out))`. It doesn't know that it's a recursive call. It just matters that it \[was defined as\] a lazy goal.
+
+At the end, once we have all of our lazy goals in the constraint store, we have to go through and make sure that they all run when they should.
+
+```scheme
+(define (fixpoint-enforce x)
+  (lambdag@ (a : s c q t)
+    (cond
+      [(empty-q? q) a]
+      [else
+        ((fresh () (q x) (fixpoint-enforce x))
+         (make-a s c empty-q t))])))
+```
+
+This function pulls out the queue `q` which is where all the lazy goals live, it runs them by applying `q` (a continuation I've been building up) and then it recursively calls `(fixpoint-enforce x)` again. Basically, It calls all the lazy goals until there are no lazy goals left, and then that's the answer.
+
+**Dan:** When you do a recursion, it creates a new lazy goal this time?
+
+**Claire:** Yes. Since `syms*` was defined recursively, calling `enforce-syms*` actually enqueues two new lazy `syms*` goals.
+
+**Dan:** Is this similar to the same architecture in cKanren, then?
+
+**Claire:** This is close to what is done in cKanren. At one point, I actually had it implemented as an actual constraint, but it was too slow. So I stuck another data structure into the package, which is this queue, and I implemented it with a continuation. I tried doing it as an actual queue, but that was too slow and it was hard to garbage collect. So instead it builds up a continuation of things to go.
+
+**Dan:** Is this some sort of CPS in the background, or `call/cc`?
+
+**Claire:** CPS. These places in the code all call `ext-q` which says "wait for me to get something to apply it to, then apply the first thing in the queue, then the second thing, etc." I wish I could show this while it was running, but since I actually implement these as closures, it's completely meaningless--you can't see the goals. I'm working on a way where you'd be able to look at the package and seew hat lazy goals are waiting to run.
+
+**Will:** How's the performance?
+
+**Claire:** It's okay. It's not great on applications like quine generation, or running the evaluator with all fresh arguments. On small things, it is definitely comparable to doing it strictly. But generating one quine does over ten thousand calls to that fixpoint trampoline at the end of the program. So that generates some slowdown. But for smaller, beginner programs like `syms*`, it would definitely be feasible to use lazy goals.
+
+**Will:** Are you talking on the order of 10x slower? 100x slower?
+
+**Claire:** It's about 10x slower.
+
+**Will:** If I understand this correctly, with this technology you no longer have to worry about making sure your unifications come before recursive calls.
+
+**Claire:** Yep!
+
+**Will:** However, if you have multiple recursive goals in a clause, do you still want to worry about their ordering?
+
+**Claire:** Like what?
+
+**Will:** Like an interpreter for `(+ a b)` where you have to evaluate both sides, `(eval-expo a)` and `(eval-expo b)`. Sometimes the order of complex goals actually does matter.
+
+**Jason:** Or like summation up to `n` \[where you need both a two-argument addition and a recursive summation\].
+
+**Claire:** It wouldn't matter if you did a breadth-first search. If you did a depth-first search, it's going to matter because it will left-recur. If performance really matters, you'll have to look at what you're doing. This does not solve all the problems at once! \[*sarcasm*\] I wish...
+
+**Will:** Is this on Github now? Can you point them to where they should go?
+
+**Claire:** I have the information on the Google group. I will post relevant links into the chat.
+
+**Will:** It's just your Github then? [www.github.com/calvis/cKanren](www.github.com/calvis/cKanren): [definition of syms*](https://github.com/calvis/cKanren/blob/8714bdd442ca03dbf5b1d6250904cbc5fd275e68/cKanren/tests/lazy-appendo.rkt#L16).
+
+Cool. Any other questions, Dan?
+
+**Dan:** I think that's pretty cool. I like it. Most of this is all about making every goal lazy, and then picking it up later on.
+
+**Claire:** Not every goal. You don't want to delay unifications, for example. You would never want to make a goal like `conso` lazy.
+
+**Dan:** Right.
+
+**Claire:** Basically, anything that makes a recursive call or that could possibly do mutual recursion with something taht is lazy, you would want to make lazy.
+
+**Will:** Do you want to say anything about `syntax-parse`? People may not be familiar with that.
+
+**Claire:** I would say don't worry too much that it's `syntax-parse`. It's basically `syntax-case` with a little bit more error checking. All it does is generate some temporary names so that I can get \[gensym?\] the different names for `syms*`, `lazy-syms*`, and `enforce-syms*`. That's really the only thing that requires `syntax-parse` over `syntax-rules`.
+
+**Will:** So it makes it easier for you to get friendly error messages in your macros.
+
+**Claire:** Yes. And I'm not even using those capabilities yet. I just wanted it in `syntax-parse` since I had the option \[since I'm working in Racket\].
+
+**Will:** Fair enough. Okay, Michael, would you like to talk about your logic puzzle? I know you and Lindsay were working on it a little bit.
+
+**Michael:** This is something that I tweeted about. I should preface by saying I'm an absolute beginner to logic programming and relational programming. I have a very simple puzzle that reflects how far along I am in my learning. I've been trying to absorb as much as possible. I have the good fortune of living in the same city as David Nolen, and I was hanging out with him at a bar after the Clojure meetup. I was saying that it's really interesting when trying to learn miniKanren that you can spend so much time doing something that can seem so trivial in another paradigm. The whole new way of learning and new way of thinking/approaching problem solving is fascinating to me. I have a really good time trying to figure out how to do some of these basic things. The really basic puzzle was: Given a list where there could be repeated elements, return a list with one copy of each duplicate. I'll show you what I mean.
+
+The relation that I defined is called `dupeo`.
+```clojure
+(l/defne dupeo
+  [l q]
+  ([[head . tail] _]
+    (l/conde
+      [(l/membero head tail) (l/== head q)]
+      [(dupeo tail q)])))
+
+(defn dupeo-test [ls]
+  (l/run* [q]
+    (l/fresh [l]
+      (l/== l ls)
+      (dupeo l q))))
+
+(dupeo-test [1 1 2])
+(dupeo-test [1 1 2 2 3 4 4 5 5 3])
+(dupeo-test [1 2 2 2 4 5 3 3])
+```
+
+I could talk to you about the desired result for these test lists, or we could look at the relation itself. Which is better?
+
+**Dan:** I have a clarification question.
+
+**Michael:** Sure!
+
+**Dan:** In your first test case `(dupeo-test [1 1 2])` does that just return `(1)`, or does it return `(1 2)`?
+
+**Michael:** It returns `(1)`. Let me run this and show you what it does now. Then, we can talk about the defect that exists. Then maybe we can talk about if there are some interesting ways to solve it.
+
+This is what it returns now:
+
+```
+> (dupeo-test [1 1 2])
+(1)
+```
+
+That's right.
+
+```
+> (dupeo-test [1 1 2 2 3 4 4 5 5 3])
+(1 2 4 3 5)
+```
+
+That's right too. I don't really care about the order of the list that gets returned. I could, but I don't in this case. It wasn't important for the application I'm using this for.
+
+```
+> (dupeo-test [1 2 2 2 4 5 3 3])
+(2 2 2 3)
+```
+
+That last one shows the most interesting edge case which is when you have more than two in a row in the input list. Here it returns three `2`s.
+
+**Dan:** What happens if you have five `2`s?
+
+**Michael:** I'll show you five `2`s.
+
+```
+> (dupeo-test [1 2 2 2 2 2 5 3 3])
+(2 2 2 2 2 2 2 2 2 2 3)
+```
+
+You get a lot of `2`s. Ten `2`s.
+
+**Dan:** Now I don't know the algorithm. I did before, but I don't now.
+
+**Will:** What is `dupeo` supposed to be doing? It's supposed to be giving a representative element...
+
+**Michael:** A representative element from each of the duplicated members of the input list where no matter how many times it's duplicated in the input list, it only appears once in the output list.
+
+**Will:** So you expect to see `(2 3)` back?
+
+**Michael:** I essentiall want the unique elements of what I'm curretnly getting back. It detects duplicates, but it returns bizarre results when there are multiple `2`s in a row.
+
+**Will:** This is an overlapping problem. You probably have overlapping clauses.
+
+**Michael:** The suggestions that I've gotten so far were to try to use some king of `not-membero` in the second `conde` clause. David suggested using something like `rember*o` to remove all instances of an element within a list.
+
+I was chatting with David and he busted this out in like 13 seconds:
+
+```clojure
+(l/defne rember*o [x l o]
+  ([_ () ()])
+  ([_ (x . xs) _]
+    (rember*o x xs o))
+  ([_ [y . xs] [y . ys]]
+    (l/!= x y)
+    (rember*o x xs ys)))
+
+(defn rember*o-test [x l]
+  (l/run* [q]
+    (rember*o x l q)))
+```
+
+```
+> (rember*o-test 2 [2 2 1 1 1 2 1])
+((1 1 1 1))
+```
+
+So that's right, because it removes all the `2`s and preserves the same amount of `1`s. That's what I would expect that to do.
+
+But it's pretty hard to get that going inside of `dupeo` to get that to do what you'd expect. I would want to use some test in the second clause before the recursion to see if the element existed. I don't know. I tried to do that in a bunch of different ways and couldn't get it to work.
+
+[47:54](https://youtu.be/MTAhbsWUUxM?t=2870)
+**Will:** What I ended up showing Lindsey 
